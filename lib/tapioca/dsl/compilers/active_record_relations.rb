@@ -701,13 +701,11 @@ module Tapioca
             when :first, :last, :take
               sigs = [
                 common_relation_methods_module.create_sig(
-              #   method_name,
                   parameters: [create_opt_param("limit", type: "NilClass", default: "nil")],
                   return_type: as_nilable_type(constant_name),
                 ),
                 common_relation_methods_module.create_sig(
                   parameters: [create_param("limit", type: "Integer")],
-              #     create_opt_param("limit", type: "T.untyped", default: "nil"),
                   return_type: "T::Array[#{constant_name}]",
                 ),
               ]
@@ -715,7 +713,7 @@ module Tapioca
                 method_name.to_s,
                 sigs: sigs,
                 parameters: [RBI::OptParam.new("limit", "nil")],
-              # )
+              )
             when :raise_record_not_found_exception!
               # skip
             else
