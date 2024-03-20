@@ -8,6 +8,11 @@ module Tapioca
     module Compilers
       class ActiveModelSecurePasswordSpec < ::DslSpec
         describe "Tapioca::Dsl::Compilers::ActiveModelSecurePasswordSpec" do
+          sig { void }
+          def before_setup
+            require "active_model"
+          end
+
           describe "initialize" do
             it "gathers no constants if there are no classes using ActiveModel::SecurePassword" do
               assert_empty(gathered_constants)
@@ -61,10 +66,10 @@ module Tapioca
                 # typed: strong
 
                 class User
-                  sig { params(unencrypted_password: T.untyped).returns(T.untyped) }
+                  sig { params(unencrypted_password: T.untyped).returns(T.any(User, FalseClass)) }
                   def authenticate(unencrypted_password); end
 
-                  sig { params(unencrypted_password: T.untyped).returns(T.untyped) }
+                  sig { params(unencrypted_password: T.untyped).returns(T.any(User, FalseClass)) }
                   def authenticate_password(unencrypted_password); end
 
                   sig { returns(T.untyped) }
@@ -73,7 +78,7 @@ module Tapioca
                   sig { params(unencrypted_password: T.untyped).returns(T.untyped) }
                   def password=(unencrypted_password); end
 
-                <% if rails_version(">= 7.1.alpha") %>
+                <% if rails_version(">= 7.1") %>
                   sig { returns(T.untyped) }
                   def password_challenge; end
 
@@ -111,7 +116,7 @@ module Tapioca
                 # typed: strong
 
                 class User
-                  sig { params(unencrypted_password: T.untyped).returns(T.untyped) }
+                  sig { params(unencrypted_password: T.untyped).returns(T.any(User, FalseClass)) }
                   def authenticate_token(unencrypted_password); end
 
                   sig { returns(T.untyped) }
@@ -120,7 +125,7 @@ module Tapioca
                   sig { params(unencrypted_password: T.untyped).returns(T.untyped) }
                   def token=(unencrypted_password); end
 
-                <% if rails_version(">= 7.1.alpha") %>
+                <% if rails_version(">= 7.1") %>
                   sig { returns(T.untyped) }
                   def token_challenge; end
 
@@ -159,13 +164,13 @@ module Tapioca
                 # typed: strong
 
                 class User
-                  sig { params(unencrypted_password: T.untyped).returns(T.untyped) }
+                  sig { params(unencrypted_password: T.untyped).returns(T.any(User, FalseClass)) }
                   def authenticate(unencrypted_password); end
 
-                  sig { params(unencrypted_password: T.untyped).returns(T.untyped) }
+                  sig { params(unencrypted_password: T.untyped).returns(T.any(User, FalseClass)) }
                   def authenticate_password(unencrypted_password); end
 
-                  sig { params(unencrypted_password: T.untyped).returns(T.untyped) }
+                  sig { params(unencrypted_password: T.untyped).returns(T.any(User, FalseClass)) }
                   def authenticate_token(unencrypted_password); end
 
                   sig { returns(T.untyped) }
@@ -174,7 +179,7 @@ module Tapioca
                   sig { params(unencrypted_password: T.untyped).returns(T.untyped) }
                   def password=(unencrypted_password); end
 
-                <% if rails_version(">= 7.1.alpha") %>
+                <% if rails_version(">= 7.1") %>
                   sig { returns(T.untyped) }
                   def password_challenge; end
 
@@ -200,7 +205,7 @@ module Tapioca
                   sig { params(unencrypted_password: T.untyped).returns(T.untyped) }
                   def token=(unencrypted_password); end
 
-                <% if rails_version(">= 7.1.alpha") %>
+                <% if rails_version(">= 7.1") %>
                   sig { returns(T.untyped) }
                   def token_challenge; end
 

@@ -110,7 +110,7 @@ module Tapioca
         autoloader = Zeitwerk::Loader.new
 
         engines.each do |engine|
-          engine.config.eager_load_paths.each do |path|
+          eager_load_paths(engine).each do |path|
             # Zeitwerk only accepts existing directories in `push_dir`.
             next unless File.directory?(path)
             # We should not add directories that are already managed by a Zeitwerk loader.
@@ -131,7 +131,7 @@ module Tapioca
         # We can't use `Rails::Engine#eager_load!` directly because it will raise as soon as it encounters
         # an error, which is not what we want. We want to try to load as much as we can.
         engines.each do |engine|
-          engine.config.eager_load_paths.each do |load_path|
+          eager_load_paths(engine).each do |load_path|
             Dir.glob("#{load_path}/**/*.rb").sort.each do |file|
               require_dependency file
             end
@@ -223,6 +223,17 @@ module Tapioca
         return unless File.exist?(file)
 
         require(file)
+      end
+
+      # Rails 7.2 renamed `eager_load_paths` to `all_eager_load_paths`, which maintains the same original functionality.
+      # The `eager_load_paths` method still exists, but doesn't return all paths anymore and causes Tapioca to miss some
+      # engine paths. The following commit is the change:
+      # https://github.com/rails/rails/commit/ebfca905db14020589c22e6937382e6f8f687664
+      sig { params(engine: T.class_of(Rails::Engine)).returns(T::Array[String]) }
+      def eager_load_paths(engine)
+        config = engine.config
+
+        (config.respond_to?(:all_eager_load_paths) && config.all_eager_load_paths) || config.eager_load_paths
       end
     end
   end

@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 begin
-  require "active_record"
+  require "active_support"
 rescue LoadError
   return
 end
@@ -30,7 +30,18 @@ module Tapioca
             super
           end
 
-          ::ActiveRecord::Base.singleton_class.prepend(self)
+          attr_reader :__tapioca_stored_attributes
+
+          def store_accessor(store_attribute, *keys, prefix: nil, suffix: nil)
+            @__tapioca_stored_attributes ||= []
+            @__tapioca_stored_attributes << [store_attribute, keys, prefix, suffix]
+
+            super
+          end
+
+          ::ActiveSupport.on_load(:active_record) do
+            ::ActiveRecord::Base.singleton_class.prepend(::Tapioca::Dsl::Compilers::Extensions::ActiveRecord)
+          end
         end
       end
     end

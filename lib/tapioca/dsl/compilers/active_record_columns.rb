@@ -1,11 +1,7 @@
 # typed: strict
 # frozen_string_literal: true
 
-begin
-  require "active_record"
-rescue LoadError
-  return
-end
+return unless defined?(ActiveRecord::Base)
 
 require "tapioca/dsl/helpers/active_record_column_type_helper"
 require "tapioca/dsl/helpers/active_record_constants_helper"
@@ -108,10 +104,15 @@ module Tapioca
         def decorate
           return unless constant.table_exists?
 
+          # We need to call this to ensure that some attribute aliases are defined, e.g.
+          # `id_value` as an alias for `id`.
+          # I think this is a regression on Rails 7.1, but we are where we are.
+          constant.define_attribute_methods
+
           root.create_path(constant) do |model|
             model.create_module(AttributeMethodsModuleName) do |mod|
-              constant.attribute_names.each do |column_name|
-                add_methods_for_attribute(mod, column_name)
+              (constant.attribute_names + ["id"]).uniq.each do |attribute_name|
+                add_methods_for_attribute(mod, attribute_name)
               end
 
               constant.attribute_aliases.each do |attribute_name, column_name|
@@ -119,15 +120,15 @@ module Tapioca
                 column_name = column_name.to_s
                 patterns = if constant.respond_to?(:attribute_method_patterns)
                   # https://github.com/rails/rails/pull/44367
-                  T.unsafe(constant).attribute_method_patterns
+                  constant.attribute_method_patterns
                 else
-                  constant.attribute_method_matchers
+                  T.unsafe(constant).attribute_method_matchers
                 end
                 new_method_names = patterns.map { |m| m.method_name(attribute_name) }
                 old_method_names = patterns.map { |m| m.method_name(column_name) }
                 methods_to_add = new_method_names - old_method_names
 
-                add_methods_for_attribute(mod, column_name, attribute_name, methods_to_add)
+                add_methods_for_attribute(mod, attribute_name, column_name, methods_to_add)
               end
             end
 
@@ -166,13 +167,15 @@ module Tapioca
         sig do
           params(
             klass: RBI::Scope,
-            column_name: String,
             attribute_name: String,
+            column_name: String,
             methods_to_add: T.nilable(T::Array[String]),
           ).void
         end
-        def add_methods_for_attribute(klass, column_name, attribute_name = column_name, methods_to_add = nil)
-          getter_type, setter_type = Helpers::ActiveRecordColumnTypeHelper.new(constant).type_for(column_name)
+        def add_methods_for_attribute(klass, attribute_name, column_name = attribute_name, methods_to_add = nil)
+          getter_type, setter_type = Helpers::ActiveRecordColumnTypeHelper
+            .new(constant)
+            .type_for(attribute_name, column_name)
 
           # Added by ActiveRecord::AttributeMethods::Read
           #

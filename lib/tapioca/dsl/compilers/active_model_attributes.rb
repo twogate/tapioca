@@ -1,11 +1,9 @@
 # typed: strict
 # frozen_string_literal: true
 
-begin
-  require "active_model"
-rescue LoadError
-  return
-end
+return unless defined?(ActiveModel::Attributes)
+
+require "tapioca/dsl/helpers/active_model_type_helper"
 
 module Tapioca
   module Dsl
@@ -72,9 +70,9 @@ module Tapioca
         def attribute_methods_for_constant
           patterns = if constant.respond_to?(:attribute_method_patterns)
             # https://github.com/rails/rails/pull/44367
-            T.unsafe(constant).attribute_method_patterns
+            constant.attribute_method_patterns
           else
-            constant.attribute_method_matchers
+            T.unsafe(constant).attribute_method_matchers
           end
           patterns.flat_map do |pattern|
             constant.attribute_types.filter_map do |name, value|
@@ -101,7 +99,7 @@ module Tapioca
           HANDLED_METHOD_TARGETS.include?(target.to_s)
         end
 
-        sig { params(attribute_type_value: ::ActiveModel::Type::Value).returns(::String) }
+        sig { params(attribute_type_value: T.untyped).returns(::String) }
         def type_for(attribute_type_value)
           type = case attribute_type_value
           when ActiveModel::Type::Boolean
@@ -119,8 +117,7 @@ module Tapioca
           when ActiveModel::Type::String
             "::String"
           else
-            # we don't want untyped to be wrapped by T.nilable, so just return early
-            return "T.untyped"
+            Helpers::ActiveModelTypeHelper.type_for(attribute_type_value)
           end
 
           as_nilable_type(type)

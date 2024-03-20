@@ -1,14 +1,7 @@
 # typed: strict
 # frozen_string_literal: true
 
-begin
-  require "rails"
-  require "active_record"
-  require "active_record/fixtures"
-  require "active_support/test_case"
-rescue LoadError
-  return
-end
+return unless defined?(Rails) && defined?(ActiveSupport::TestCase) && defined?(ActiveRecord::TestFixtures)
 
 module Tapioca
   module Dsl
@@ -62,7 +55,7 @@ module Tapioca
 
           sig { override.returns(T::Enumerable[Module]) }
           def gather_constants
-            return [] unless Rails.application
+            return [] unless defined?(Rails.application) && Rails.application
 
             [ActiveSupport::TestCase]
           end
@@ -73,20 +66,22 @@ module Tapioca
         sig { returns(T::Class[ActiveRecord::TestFixtures]) }
         def fixture_loader
           @fixture_loader ||= T.let(
-            T.cast(
-              Class.new do
-                T.unsafe(self).include(ActiveRecord::TestFixtures)
+            Class.new do
+              T.unsafe(self).include(ActiveRecord::TestFixtures)
 
+              if respond_to?(:fixture_paths=)
+                T.unsafe(self).fixture_paths = [Rails.root.join("test", "fixtures")]
+              else
                 T.unsafe(self).fixture_path = Rails.root.join("test", "fixtures")
-                # https://github.com/rails/rails/blob/7c70791470fc517deb7c640bead9f1b47efb5539/activerecord/lib/active_record/test_fixtures.rb#L46
-                singleton_class.define_method(:file_fixture_path) do
-                  Rails.root.join("test", "fixtures", "files")
-                end
+              end
 
-                T.unsafe(self).fixtures(:all)
-              end,
-              T::Class[ActiveRecord::TestFixtures],
-            ),
+              # https://github.com/rails/rails/blob/7c70791470fc517deb7c640bead9f1b47efb5539/activerecord/lib/active_record/test_fixtures.rb#L46
+              singleton_class.define_method(:file_fixture_path) do
+                Rails.root.join("test", "fixtures", "files")
+              end
+
+              T.unsafe(self).fixtures(:all)
+            end,
             T.nilable(T::Class[ActiveRecord::TestFixtures]),
           )
         end

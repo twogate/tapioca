@@ -7,19 +7,19 @@ module Tapioca
   class TodoSpec < SpecWithProject
     describe "cli::todo" do
       before(:all) do
-        project.bundle_install
+        project.bundle_install!
         project.tapioca("configure")
       end
 
       after do
-        @project.remove("lib/")
-        @project.remove("sorbet/rbi")
+        @project.remove!("lib/")
+        @project.remove!("sorbet/rbi")
       end
 
       it "does nothing if all constant are already resolved" do
         result = @project.tapioca("todo")
 
-        assert_equal(<<~OUT, result.out)
+        assert_stdout_equals(<<~OUT, result)
           #{Commands::Todo::DEPRECATION_MESSAGE}
           Finding all unresolved constants, this may take a few seconds... Nothing to do
         OUT
@@ -31,7 +31,7 @@ module Tapioca
       end
 
       it "creates a list of all unresolved constants" do
-        @project.write("lib/file.rb", <<~RB)
+        @project.write!("lib/file.rb", <<~RB)
           class Foo < ::Undef1
             def foo
               Undef2.new
@@ -62,7 +62,7 @@ module Tapioca
 
         result = @project.tapioca("todo")
 
-        assert_equal(<<~OUT, result.out)
+        assert_stdout_equals(<<~OUT, result)
           #{Commands::Todo::DEPRECATION_MESSAGE}
           Finding all unresolved constants, this may take a few seconds... Done
 
@@ -91,13 +91,13 @@ module Tapioca
       end
 
       it "creates a TODO file without header" do
-        @project.write("lib/file.rb", <<~RUBY)
+        @project.write!("lib/file.rb", <<~RUBY)
           class Foo < ::Undef1; end
         RUBY
 
         result = @project.tapioca("todo --no-file-header")
 
-        assert_equal(<<~OUT, result.out)
+        assert_stdout_equals(<<~OUT, result)
           #{Commands::Todo::DEPRECATION_MESSAGE}
           Finding all unresolved constants, this may take a few seconds... Done
 
@@ -116,7 +116,7 @@ module Tapioca
       end
 
       it "deletes the todo.rbi file when everything is resolved" do
-        @project.write("sorbet/rbi/todo.rbi", <<~RB)
+        @project.write!("sorbet/rbi/todo.rbi", <<~RB)
           # typed: false
 
           module SomeTodo; end
@@ -124,7 +124,7 @@ module Tapioca
 
         result = @project.tapioca("todo")
 
-        assert_equal(<<~OUT, result.out)
+        assert_stdout_equals(<<~OUT, result)
           #{Commands::Todo::DEPRECATION_MESSAGE}
           Finding all unresolved constants, this may take a few seconds... Nothing to do
         OUT

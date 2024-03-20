@@ -8,6 +8,11 @@ module Tapioca
     module Compilers
       class ActiveRecordScopeSpec < ::DslSpec
         describe "Tapioca::Dsl::Compilers::ActiveRecordScope" do
+          sig { void }
+          def before_setup
+            require "active_record"
+          end
+
           describe "initialize" do
             it "gathers no constants if there are no ActiveRecord classes" do
               assert_empty(gathered_constants)
@@ -416,12 +421,7 @@ module Tapioca
               require "tapioca/dsl/compilers/active_record_relations"
               activate_other_dsl_compilers(ActiveRecordRelations)
 
-              require "active_record"
-              require "active_storage/attached"
-              require "active_storage/reflection"
-              ::ActiveRecord::Base.include(::ActiveStorage::Attached::Model)
-              ::ActiveRecord::Base.include(::ActiveStorage::Reflection::ActiveRecordExtensions)
-              ::ActiveRecord::Reflection.singleton_class.prepend(::ActiveStorage::Reflection::ReflectionExtension)
+              Tapioca::RailsSpecHelper.load_active_storage
             end
 
             it "generates RBI file for ActiveRecord classes with has_one_attached scope fields" do

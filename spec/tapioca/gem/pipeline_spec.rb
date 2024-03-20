@@ -12,34 +12,60 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
   include Tapioca::Helpers::Test::Isolation
   include Tapioca::SorbetHelper
 
-  describe Tapioca::Gem::Pipeline do
-    sig { params(include_doc: T::Boolean, include_loc: T::Boolean).returns(String) }
-    def compile(include_doc: false, include_loc: false)
-      # create a fake gemspec
-      spec = ::Gem::Specification.new("the-dep", "1.1.2") do |spec|
+  DEFAULT_GEM_NAME = T.let("the-default-gem", String)
+
+  private
+
+  sig { params(gem_name: String, include_doc: T::Boolean, include_loc: T::Boolean).returns(String) }
+  def compile(gem_name = DEFAULT_GEM_NAME, include_doc: false, include_loc: false)
+    mock_gem_path = mock_gems[gem_name]
+
+    # If we are compiling for a mock gem, we need to create a fake gemspec
+    if mock_gem_path
+      spec = ::Gem::Specification.new(gem_name, "1.0.0") do |spec|
         spec.platform = nil
-        spec.full_gem_path = tmp_path
+        spec.full_gem_path = mock_gem_path
         spec.require_paths = ["lib"]
       end
 
-      # add it to the list of gem specification stubs
-      Gem::Specification.stubs[spec.name] = spec
-
-      # wrap it in our gemspec wrapper
-      gem = Tapioca::Gemfile::GemSpec.new(spec)
-
-      # push it through the pipeline
-      tree = Tapioca::Gem::Pipeline.new(gem, include_doc: include_doc, include_loc: include_loc).compile
-
-      # NOTE: This is not returning a `RBI::File`.
-      # The following test suite is based on the string output of the `RBI::Tree` rather
-      # than the, now used, `RBI::File`. The file output includes the sigils, comments, etc.
-      # We should eventually update these tests to be based on the `RBI::File`.
-      Tapioca::DEFAULT_RBI_FORMATTER.format_tree(tree)
-
-      tree.string
+      # add spec to the list of gem specification stubs
+      Gem::Specification.stubs[gem_name] = spec
     end
 
+    # wrap it in our gemspec wrapper
+    gem = Tapioca::Gemfile::GemSpec.new(Gem::Specification.stubs[gem_name].first)
+
+    # push it through the pipeline
+    tree = Tapioca::Gem::Pipeline.new(gem, include_doc: include_doc, include_loc: include_loc).compile
+
+    # NOTE: This is not returning a `RBI::File`.
+    # The following test suite is based on the string output of the `RBI::Tree` rather
+    # than the, now used, `RBI::File`. The file output includes the sigils, comments, etc.
+    # We should eventually update these tests to be based on the `RBI::File`.
+    Tapioca::DEFAULT_RBI_FORMATTER.format_tree(tree)
+
+    tree.string
+  end
+
+  sig { params(gem_name: String, block: T.proc.void).void }
+  def mock_gem(gem_name, &block)
+    current_tmp_path = tmp_path
+
+    @tmp_path = mock_gems.fetch(gem_name) { mock_gems[gem_name] = Dir.mktmpdir }
+
+    block.call
+  ensure
+    @tmp_path = current_tmp_path
+  end
+
+  sig { returns(T::Hash[String, String]) }
+  def mock_gems
+    @gems ||= T.let({}, T.nilable(T::Hash[String, String]))
+    @gems[DEFAULT_GEM_NAME] = tmp_path if @gems.empty?
+    @gems
+  end
+
+  describe Tapioca::Gem::Pipeline do
     before do
       # We need to undefine and unload `ActiveSupport` so that the test object
       # space is as clean as possible.
@@ -410,6 +436,245 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       assert_includes(compiled, output)
     end
 
+    it "must do mixin attribution properly when include occurs in other gem" do
+      mock_gem("some_engine") do
+        add_ruby_file("lib/some_engine.rb", <<~RUBY)
+          require "action_controller"
+
+          module SomeEngine
+            class SomeController < ActionController::Base
+              # This method triggers a dynamic mixin which should be attributed to this gem
+              # and not actionpack, even though the real `include` happens inside actionpack
+              helper_method :foo
+            end
+          end
+        RUBY
+      end
+
+      output = template(<<~RBI)
+        module SomeEngine; end
+
+        class SomeEngine::SomeController < ::ActionController::Base
+          private
+
+          def _layout(lookup_context, formats); end
+
+          class << self
+            def _helper_methods; end
+            def middleware_stack; end
+          end
+        end
+
+        module SomeEngine::SomeController::HelperMethods
+          include ::ActionController::Base::HelperMethods
+
+        <% if ruby_version(">= 3.1") %>
+          def foo(*args, **_arg1, &block); end
+        <% else %>
+          def foo(*args, &block); end
+        <% end %>
+        end
+      RBI
+
+      assert_equal(output, compile("some_engine"))
+    end
+
+    it "must generate RBIs for constants defined in a different gem but with mixins in this gem" do
+      mock_gem("foo") do
+        add_ruby_file("lib/foo.rb", <<~RBI)
+          class Foo
+            def baz; end
+            def buzz; end
+          end
+        RBI
+      end
+
+      mock_gem("bar") do
+        add_ruby_file("lib/bar.rb", <<~RBI)
+          module Bar; end
+
+          Foo.prepend(Bar)
+        RBI
+      end
+
+      output = <<~RBI
+        module Bar; end
+
+        class Foo
+          include ::Bar
+        end
+      RBI
+
+      assert_equal(output, compile("bar"))
+    end
+
+    it "must not generate RBIs for constants that have dynamic mixins performed in other gems" do
+      mock_gem("bar") do
+        add_ruby_file("lib/bar.rb", <<~RBI)
+          module Bar; end
+        RBI
+      end
+
+      mock_gem("foo") do
+        add_ruby_file("lib/foo.rb", <<~RBI)
+          class Foo; end
+          String.prepend(Bar)
+        RBI
+      end
+
+      output = <<~RBI
+        module Bar; end
+      RBI
+
+      assert_equal(output, compile("bar"))
+    end
+
+    it "must generate RBIs for constants that have dynamic mixins performed in the gem" do
+      mock_gem("bar") do
+        add_ruby_file("lib/bar.rb", <<~RBI)
+          class Bar
+            def bar; end
+          end
+        RBI
+      end
+
+      mock_gem("foo") do
+        add_ruby_file("lib/foo.rb", <<~RBI)
+          module Foo; end
+          class Baz < Bar; end
+
+          Bar.prepend(Foo)
+        RBI
+      end
+
+      output = <<~RBI
+        class Bar
+          include ::Foo
+        end
+
+        class Baz < ::Bar; end
+        module Foo; end
+      RBI
+
+      assert_equal(output, compile("foo"))
+    end
+
+    it "must generate RBIs for foreign constants whose singleton class overrides #inspect" do
+      mock_gem("bar") do
+        add_ruby_file("lib/bar.rb", <<~RBI)
+          class Bar
+            def self.inspect
+              "Override!"
+            end
+          end
+        RBI
+      end
+
+      mock_gem("foo") do
+        add_ruby_file("lib/foo.rb", <<~RBI)
+          module Foo; end
+
+          Bar.singleton_class.include(Foo)
+        RBI
+      end
+
+      output = <<~RBI
+        class Bar
+          extend ::Foo
+        end
+
+        module Foo; end
+      RBI
+
+      assert_equal(output, compile("foo"))
+    end
+
+    it "generates documentation only for the gem that defines it" do
+      mock_gem("foo") do
+        add_ruby_file("lib/foo.rb", <<~RB)
+          # Most objects are cloneable
+          class Object
+            def foo; end
+          end
+        RB
+      end
+      mock_gem("bar") do
+        add_ruby_file("lib/bar.rb", <<~RB)
+          class Object
+            def bar; end
+          end
+        RB
+      end
+      mock_gem("baz") do
+        add_ruby_file("lib/baz.rb", <<~RB)
+          def baz; end
+        RB
+      end
+
+      documentation = <<~RBI
+        # Most objects are cloneable
+      RBI
+
+      assert_includes(compile("foo", include_doc: true), documentation)
+      refute_includes(compile("bar", include_doc: true), documentation)
+      refute_includes(compile("baz", include_doc: true), documentation)
+    end
+
+    it "does not generate RBI if namespace contains alias from different gem" do
+      mock_gem("foo") do
+        add_ruby_file("lib/foo.rb", <<~RB)
+          module Foo; end
+          F = Foo
+        RB
+      end
+
+      mock_gem("bar") do
+        add_ruby_file("lib/bar.rb", <<~RB)
+          module Foo
+            module Bar; end
+          end
+          F::B = Foo::Bar
+        RB
+      end
+
+      assert_equal(<<~RBI, compile("foo"))
+        F = Foo
+        module Foo; end
+      RBI
+
+      assert_equal(<<~RBI, compile("bar"))
+        module Foo; end
+        Foo::B = Foo::Bar
+        module Foo::Bar; end
+      RBI
+    end
+
+    it "must do mixin attribution properly" do
+      # This is pattern is taken from the private `typed_parameters` gem.
+      add_ruby_file("lib/typed_parameters.rb", <<~RUBY)
+        require "action_controller"
+
+        module TypedParameters
+        end
+
+        # This dynamic mixin should be generated in the gem RBI
+        ActionController::Parameters.include(TypedParameters)
+      RUBY
+
+      # actionpack RBI should have nothing in it about `TypedParameters`
+      refute_includes(compile("actionpack"), "TypedParameters")
+
+      output = <<~RBI
+        class ActionController::Parameters
+          include ::TypedParameters
+        end
+
+        module TypedParameters; end
+      RBI
+
+      assert_equal(output, compile)
+    end
+
     it "compiles mixins in the correct order" do
       add_ruby_file("bar.rb", <<~RUBY)
         module ModuleA
@@ -497,7 +762,6 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       RUBY
 
       add_ruby_file("ext.rb", <<~RUBY)
-
         class String
           include Foo::Bar
 
@@ -520,7 +784,7 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           def foo_int; end
         end
 
-        class Module
+        class Symbol
           def bar; end
         end
       RUBY
@@ -547,15 +811,17 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           def to_bar; end
         end
 
-        class Module
-          def bar; end
-        end
-
         class String
           include ::Comparable
           include ::Foo::Bar
 
           def to_foo(base = T.unsafe(nil)); end
+        end
+
+        class Symbol
+          include ::Comparable
+
+          def bar; end
         end
       RBI
 
@@ -2043,11 +2309,7 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       RUBY
 
       output = template(<<~RBI)
-        <% if sorbet_supports?(:non_generic_weak_map) %>
         Foo = T.let(T.unsafe(nil), ObjectSpace::WeakMap)
-        <% else %>
-        Foo = T.let(T.unsafe(nil), ObjectSpace::WeakMap[T.untyped])
-        <% end %>
       RBI
 
       assert_equal(output, compile)
@@ -2800,6 +3062,8 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           const :baz, T::Hash[String, T.untyped]
           prop :quux, T.untyped, default: [1, 2, 3]
           const :quuz, Integer, factory: -> { 1 }
+          prop :fuzz, T.proc.returns(String), default: -> { "" }
+          prop :buzz, T.proc.void, factory: -> { 42 }
         end
       RUBY
 
@@ -2894,18 +3158,16 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
             B = type_template(:out)
             C = type_template
 
-            # The constants below are using the old type variable syntax specifically,
-            # so that we can be certain that we handle the old syntax properly.
-            D = type_member(fixed: Integer)
-            E = type_member(fixed: Integer, upper: T::Array[Numeric])
-            F = type_member(
+            D = type_member { { fixed: Integer } }
+            E = type_member { { fixed: Integer, upper: T::Array[Numeric] } }
+            F = type_member { {
               fixed: Integer,
               lower: T.any(Complex, T::Hash[Symbol, T::Array[Integer]]),
-              upper: T.nilable(Numeric)
-            )
-            G = type_member(:in, fixed: Integer)
-            H = type_member(:in, fixed: Integer, upper: Numeric)
-            I = type_member(:in, fixed: Integer, lower: Complex, upper: Numeric)
+              upper: T.nilable(Numeric),
+            } }
+            G = type_member(:in) { { fixed: Integer } }
+            H = type_member(:in) { { fixed: Integer, upper: Numeric } }
+            I = type_member(:in) { { fixed: Integer, lower: Complex, upper: Numeric } }
 
             class << self
               extend(T::Generic)
@@ -2976,6 +3238,8 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           const :baz, T::Hash[::String, T.untyped]
           prop :quux, T.untyped, default: T.unsafe(nil)
           const :quuz, ::Integer, default: T.unsafe(nil)
+          prop :fuzz, T.proc.returns(::String), default: T.unsafe(nil)
+          prop :buzz, T.proc.void, default: T.unsafe(nil)
 
           class << self
             def inherited(s); end
@@ -4112,12 +4376,6 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
     end
 
     it "compile RBIs with location from gem source" do
-      add_ruby_file("option.rb", <<~RB)
-        class Option
-          include Mutex_m
-        end
-      RB
-
       add_ruby_file("bar.rb", <<~RB)
         module Bar
           extend T::Sig
@@ -4170,94 +4428,72 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
         NewClass = Class.new
       RB
 
-      mutex = Class.new { |k| k.include(::Mutex_m) }
-      sorbet_runtime_version = ::Gem::Specification.find_by_name("sorbet-runtime").version.to_s
-      mutex_version = ::Gem::Specification.default_stubs.find { |s| s.name == "mutex_m" }.version.to_s
+      sorbet_runtime_spec = ::Gem::Specification.find_by_name("sorbet-runtime")
 
       output = template(<<~RBI)
-        # source://the-dep//lib/bar.rb#1
+        # source://#{DEFAULT_GEM_NAME}//lib/bar.rb#1
         module Bar
           # Some documentation
           #
-          # source://the-dep//lib/bar.rb#6
+          # source://#{DEFAULT_GEM_NAME}//lib/bar.rb#6
           sig { void }
           def bar; end
 
           def foo1; end
 
-          # source://the-dep//lib/bar.rb#15
+          # source://#{DEFAULT_GEM_NAME}//lib/bar.rb#15
           def foo2; end
 
           class << self
             # Some documentation
             #
-            # source://the-dep//lib/bar.rb#9
+            # source://#{DEFAULT_GEM_NAME}//lib/bar.rb#9
             def bar; end
           end
         end
 
-        # source://the-dep//lib/bar.rb#11
+        # source://#{DEFAULT_GEM_NAME}//lib/bar.rb#11
         Bar::BAR = T.let(T.unsafe(nil), Integer)
 
-        # source://the-dep//lib/foo.rb#23
+        # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#23
         class BasicFoo < ::BasicObject
-          # source://the-dep//lib/foo.rb#27
+          # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#27
           sig { void }
           def foo; end
         end
 
         # @abstract It cannot be directly instantiated. Subclasses must implement the `abstract` methods below.
         #
-        # source://the-dep//lib/foo.rb#11
+        # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#11
         class Baz
           abstract!
         end
 
-        # source://the-dep//lib/foo.rb#1
+        # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#1
         class Foo; end
 
-        # source://the-dep//lib/foo.rb#6
+        # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#6
         module Foo::Helper
-          # source://the-dep//lib/foo.rb#7
+          # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#7
           def helper_method; end
         end
 
-        # source://the-dep//lib/foo.rb#30
+        # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#30
         class NewClass; end
 
-        # source://the-dep//lib/option.rb#1
-        class Option
-          include ::Mutex_m
-
-          # source://mutex_m/#{mutex_version}/mutex_m.rb##{mutex.instance_method(:lock).source_location&.last}
-          def lock; end
-
-          # source://mutex_m/#{mutex_version}/mutex_m.rb##{mutex.instance_method(:locked?).source_location&.last}
-          def locked?; end
-
-          # source://mutex_m/#{mutex_version}/mutex_m.rb##{mutex.instance_method(:synchronize).source_location&.last}
-          def synchronize(&block); end
-
-          # source://mutex_m/#{mutex_version}/mutex_m.rb##{mutex.instance_method(:try_lock).source_location&.last}
-          def try_lock; end
-
-          # source://mutex_m/#{mutex_version}/mutex_m.rb##{mutex.instance_method(:unlock).source_location&.last}
-          def unlock; end
-        end
-
-        # source://the-dep//lib/foo.rb#16
+        # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#16
         class Quux < ::T::Struct
           class << self
-            # source://sorbet-runtime/#{sorbet_runtime_version}/lib/types/struct.rb#13
+            # source://sorbet-runtime/#{sorbet_runtime_spec.version}/lib/types/struct.rb#13
             def inherited(s); end
           end
         end
 
-        # source://the-dep//lib/foo.rb#19
+        # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#19
         class String
           include ::Comparable
 
-          # source://the-dep//lib/foo.rb#20
+          # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#20
           def foo; end
         end
       RBI

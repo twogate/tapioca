@@ -1,13 +1,7 @@
 # typed: strict
 # frozen_string_literal: true
 
-begin
-  require "identity_cache"
-rescue LoadError
-  # means IdentityCache is not installed,
-  # so let's not even define the compiler.
-  return
-end
+return unless defined?(ActiveRecord::Base) && defined?(IdentityCache::WithoutPrimaryIndex)
 
 require "tapioca/dsl/helpers/active_record_column_type_helper"
 
@@ -224,7 +218,6 @@ module Tapioca
         def create_aliased_fetch_by_methods(field, klass)
           type, _ = Helpers::ActiveRecordColumnTypeHelper.new(constant).type_for(field.alias_name.to_s)
           multi_type = type.delete_prefix("T.nilable(").delete_suffix(")").delete_prefix("::")
-          length = field.key_fields.length
           suffix = field.send(:fetch_method_suffix)
 
           parameters = field.key_fields.map do |arg|
@@ -238,14 +231,12 @@ module Tapioca
             return_type: type,
           )
 
-          if length == 1
-            klass.create_method(
-              "fetch_multi_#{suffix}",
-              class_method: true,
-              parameters: [create_param("keys", type: "T::Enumerable[T.untyped]")],
-              return_type: COLLECTION_TYPE.call(multi_type),
-            )
-          end
+          klass.create_method(
+            "fetch_multi_#{suffix}",
+            class_method: true,
+            parameters: [create_param("keys", type: "T::Enumerable[T.untyped]")],
+            return_type: COLLECTION_TYPE.call(multi_type),
+          )
         end
       end
     end

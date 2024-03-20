@@ -8,6 +8,11 @@ module Tapioca
     module Compilers
       class ActiveRecordAssociationsSpec < ::DslSpec
         describe "Tapioca::Dsl::Compilers::ActiveRecordAssociationsSpec" do
+          sig { void }
+          def before_setup
+            require "active_record"
+          end
+
           describe "initialize" do
             it "gathers no constants if there are no ActiveRecord subclasses" do
               assert_empty(gathered_constants)
@@ -1467,27 +1472,7 @@ module Tapioca
               require "tapioca/dsl/compilers/active_record_relations"
               activate_other_dsl_compilers(ActiveRecordRelations)
 
-              add_ruby_file("application.rb", <<~RUBY)
-                ENV["DATABASE_URL"] = "sqlite3::memory:"
-
-                require "active_storage/engine"
-
-                class Dummy < Rails::Application
-                  config.eager_load = true
-                  config.active_storage.service = :local
-                  if ActiveRecord::Base.respond_to?(:legacy_connection_handling=)
-                    config.active_record.legacy_connection_handling = false
-                  end
-                  config.active_storage.service_configurations = {
-                    local: {
-                      service: "Disk",
-                      root: Rails.root.join("storage")
-                    }
-                  }
-                  config.logger = Logger.new('/dev/null')
-                end
-                Rails.application.initialize!
-              RUBY
+              Tapioca::RailsSpecHelper.load_active_storage
             end
 
             it "generates RBI file for has_one_attached ActiveStorage association" do

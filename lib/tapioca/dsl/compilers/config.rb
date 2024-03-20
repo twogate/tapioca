@@ -1,11 +1,7 @@
 # typed: strict
 # frozen_string_literal: true
 
-begin
-  require "config"
-rescue LoadError
-  return
-end
+return unless defined?(Config) && defined?(Config::VERSION) && defined?(Config.const_name)
 
 module Tapioca
   module Dsl

@@ -1,12 +1,8 @@
 # typed: strict
 # frozen_string_literal: true
 
-begin
-  gem("graphql", ">= 1.13")
-  require "graphql"
-rescue LoadError
-  return
-end
+return unless defined?(GraphQL::Schema::InputObject)
+return unless Gem::Requirement.new(">= 1.13").satisfied_by?(Gem::Version.new(GraphQL::VERSION))
 
 require "tapioca/dsl/helpers/graphql_type_helper"
 
@@ -55,7 +51,10 @@ module Tapioca
           root.create_path(constant) do |input_object|
             arguments.each do |argument|
               name = argument.keyword.to_s
-              input_object.create_method(name, return_type: Helpers::GraphqlTypeHelper.type_for(argument))
+              input_object.create_method(
+                name,
+                return_type: Helpers::GraphqlTypeHelper.type_for_argument(argument, constant),
+              )
             end
           end
         end

@@ -7,7 +7,14 @@ module Tapioca
   module Dsl
     module Compilers
       class ActiveRecordColumnsSpec < ::DslSpec
+        extend Tapioca::Helpers::Test::Template
+
         describe "Tapioca::Dsl::Compilers::ActiveRecordColumns" do
+          sig { void }
+          def before_setup
+            require "active_record"
+          end
+
           describe "initialize" do
             it "gathers no constants if there are no ActiveRecord subclasses" do
               assert_empty(gathered_constants)
@@ -65,7 +72,7 @@ module Tapioca
                   end
                 RUBY
 
-                expected = <<~RBI
+                expected = template(<<~RBI, trim_mode: "-")
                   # typed: strong
 
                   class Post
@@ -111,6 +118,53 @@ module Tapioca
                       sig { returns(T.nilable(::Integer)) }
                       def id_previously_was; end
 
+                    <%- if rails_version(">= 7.1") -%>
+                      sig { returns(T.nilable(::Integer)) }
+                      def id_value; end
+
+                      sig { params(value: ::Integer).returns(::Integer) }
+                      def id_value=(value); end
+
+                      sig { returns(T::Boolean) }
+                      def id_value?; end
+
+                      sig { returns(T.nilable(::Integer)) }
+                      def id_value_before_last_save; end
+
+                      sig { returns(T.untyped) }
+                      def id_value_before_type_cast; end
+
+                      sig { returns(T::Boolean) }
+                      def id_value_came_from_user?; end
+
+                      sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                      def id_value_change; end
+
+                      sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                      def id_value_change_to_be_saved; end
+
+                      sig { params(from: ::Integer, to: ::Integer).returns(T::Boolean) }
+                      def id_value_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                      sig { returns(T.nilable(::Integer)) }
+                      def id_value_in_database; end
+
+                      sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                      def id_value_previous_change; end
+
+                      sig { params(from: ::Integer, to: ::Integer).returns(T::Boolean) }
+                      def id_value_previously_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                      sig { returns(T.nilable(::Integer)) }
+                      def id_value_previously_was; end
+
+                      sig { returns(T.nilable(::Integer)) }
+                      def id_value_was; end
+
+                      sig { void }
+                      def id_value_will_change!; end
+
+                    <%- end -%>
                       sig { returns(T.nilable(::Integer)) }
                       def id_was; end
 
@@ -120,14 +174,33 @@ module Tapioca
                       sig { void }
                       def restore_id!; end
 
+                    <%- if rails_version(">= 7.1") -%>
+                      sig { void }
+                      def restore_id_value!; end
+
+                    <%- end -%>
                       sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
                       def saved_change_to_id; end
 
                       sig { returns(T::Boolean) }
                       def saved_change_to_id?; end
 
+                    <%- if rails_version(">= 7.1") -%>
+                      sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                      def saved_change_to_id_value; end
+
+                      sig { returns(T::Boolean) }
+                      def saved_change_to_id_value?; end
+
                       sig { returns(T::Boolean) }
                       def will_save_change_to_id?; end
+
+                      sig { returns(T::Boolean) }
+                      def will_save_change_to_id_value?; end
+                    <%- else -%>
+                      sig { returns(T::Boolean) }
+                      def will_save_change_to_id?; end
+                    <%- end -%>
                     end
                   end
                 RBI
@@ -359,8 +432,8 @@ module Tapioca
               it "generates correct types for serialized columns" do
                 add_ruby_file("schema.rb", <<~RUBY)
                   class CustomCoder
-                    def dump(value); nil end
-                    def load; nil end
+                    def self.dump(value); nil end
+                    def self.load; nil end
                   end
 
                   ActiveRecord::Migration.suppress_messages do
@@ -375,14 +448,25 @@ module Tapioca
                   end
                 RUBY
 
-                add_ruby_file("post.rb", <<~RUBY)
-                  class Post < ActiveRecord::Base
-                    serialize :serialized_column_array, Array
-                    serialize :serialized_column_custom, CustomCoder
-                    serialize :serialized_column_hash, Hash
-                    serialize :serialized_column_json, JSON
-                  end
-                RUBY
+                if rails_version(">= 7.1")
+                  add_ruby_file("post.rb", <<~RUBY)
+                    class Post < ActiveRecord::Base
+                      serialize :serialized_column_array, type: Array
+                      serialize :serialized_column_hash, type: Hash
+                      serialize :serialized_column_json, coder: JSON
+                      serialize :serialized_column_custom, coder: CustomCoder
+                    end
+                  RUBY
+                else
+                  add_ruby_file("post.rb", <<~RUBY)
+                    class Post < ActiveRecord::Base
+                      serialize :serialized_column_array, Array
+                      serialize :serialized_column_hash, Hash
+                      serialize :serialized_column_json, JSON
+                      serialize :serialized_column_custom, CustomCoder
+                    end
+                  RUBY
+                end
 
                 output = rbi_for(:Post)
 
@@ -775,6 +859,41 @@ module Tapioca
                 assert_includes(output, expected)
               end
 
+              it "discovers cast type for normalized attributes" do
+                # Support for normalization was added in Rails 7.1 so this test is only relevant
+                # for that version and above.
+                return unless rails_version(">= 7.1")
+
+                add_ruby_file("schema.rb", <<~RUBY)
+                  ActiveRecord::Migration.suppress_messages do
+                    ActiveRecord::Schema.define do
+                      create_table :posts do |t|
+                        t.string :title
+                      end
+                    end
+                  end
+                RUBY
+
+                add_ruby_file("post.rb", <<~RUBY)
+                  class Post < ActiveRecord::Base
+                    normalizes :title, with: ->(title) { title.titleize }
+                  end
+                RUBY
+
+                expected = indented(<<~RBI, 4)
+                  sig { returns(T.nilable(::String)) }
+                  def title; end
+
+                  sig { params(value: T.nilable(::String)).returns(T.nilable(::String)) }
+                  def title=(value); end
+
+                  sig { returns(T::Boolean) }
+                  def title?; end
+                RBI
+
+                assert_includes(rbi_for(:Post), expected)
+              end
+
               it "discovers custom type from signature on deserialize method" do
                 add_ruby_file("schema.rb", <<~RUBY)
                   ActiveRecord::Migration.suppress_messages do
@@ -822,33 +941,11 @@ module Tapioca
                 assert_includes(rbi_for(:Post), expected)
               end
 
-              it "discovers custom type from signature on cast method" do
+              it "generates id accessors when primary key isn't id" do
                 add_ruby_file("schema.rb", <<~RUBY)
                   ActiveRecord::Migration.suppress_messages do
                     ActiveRecord::Schema.define do
-                      create_table :posts do |t|
-                        t.decimal :cost
-                      end
-                    end
-                  end
-                RUBY
-
-                add_ruby_file("custom_type.rb", <<~RUBY)
-                  class CustomType
-                    attr_accessor :value
-
-                    def initialize(number = 0.0)
-                      @value = number
-                    end
-
-                    class Type < ActiveRecord::Type::Value
-                      extend(T::Sig)
-
-                      sig { params(value: ::Numeric).returns(T.any(::CustomType, Numeric)) }
-                      def cast(value)
-                        decimal = super
-                        return CustomType.new(decimal) if decimal
-                        decimal
+                      create_table :posts, primary_key: :number do |t|
                       end
                     end
                   end
@@ -856,197 +953,13 @@ module Tapioca
 
                 add_ruby_file("post.rb", <<~RUBY)
                   class Post < ActiveRecord::Base
-                    attribute :cost, CustomType::Type.new
+                    self.primary_key = :number
                   end
                 RUBY
 
                 expected = indented(<<~RBI, 4)
-                  sig { returns(T.nilable(T.any(::CustomType, ::Numeric))) }
-                  def cost; end
-
-                  sig { params(value: T.nilable(T.any(::CustomType, ::Numeric))).returns(T.nilable(T.any(::CustomType, ::Numeric))) }
-                  def cost=(value); end
-                RBI
-
-                assert_includes(rbi_for(:Post), expected)
-              end
-
-              it "discovers custom type from signature on serialize method" do
-                add_ruby_file("schema.rb", <<~RUBY)
-                  ActiveRecord::Migration.suppress_messages do
-                    ActiveRecord::Schema.define do
-                      create_table :posts do |t|
-                        t.decimal :cost
-                      end
-                    end
-                  end
-                RUBY
-
-                add_ruby_file("custom_type.rb", <<~RUBY)
-                  class CustomType
-                    attr_accessor :value
-
-                    def initialize(number = 0.0)
-                      @value = number
-                    end
-
-                    class Type < ActiveRecord::Type::Value
-                      extend(T::Sig)
-
-                      sig { params(value: ::CustomType).returns(Numeric) }
-                      def serialize(value)
-                        value = super unless value.is_a?(::CustomType)
-                        value.value unless value.nil?
-                      end
-                    end
-                  end
-                RUBY
-
-                add_ruby_file("post.rb", <<~RUBY)
-                  class Post < ActiveRecord::Base
-                    attribute :cost, CustomType::Type.new
-                  end
-                RUBY
-
-                expected = indented(<<~RBI, 4)
-                  sig { returns(T.nilable(::CustomType)) }
-                  def cost; end
-
-                  sig { params(value: T.nilable(::CustomType)).returns(T.nilable(::CustomType)) }
-                  def cost=(value); end
-                RBI
-
-                assert_includes(rbi_for(:Post), expected)
-              end
-
-              it "discovers custom type even if it is generic" do
-                add_ruby_file("schema.rb", <<~RUBY)
-                  ActiveRecord::Migration.suppress_messages do
-                    ActiveRecord::Schema.define do
-                      create_table :posts do |t|
-                        t.decimal :cost
-                      end
-                    end
-                  end
-                RUBY
-
-                add_ruby_file("column_type.rb", <<~RUBY)
-                  class ValueType
-                    extend T::Generic
-
-                    Elem = type_member
-                  end
-
-                  class ColumnType < ActiveRecord::Type::Value
-                    extend(T::Sig)
-
-                    sig { params(value: ::ValueType[Integer]).returns(Numeric) }
-                    def serialize(value)
-                      super
-                    end
-                  end
-                RUBY
-
-                add_ruby_file("post.rb", <<~RUBY)
-                  class Post < ActiveRecord::Base
-                    attribute :cost, ColumnType.new
-                  end
-                RUBY
-
-                expected = indented(<<~RUBY, 4)
-                  sig { returns(T.nilable(ValueType[::Integer])) }
-                  def cost; end
-
-                  sig { params(value: T.nilable(ValueType[::Integer])).returns(T.nilable(ValueType[::Integer])) }
-                  def cost=(value); end
-                RUBY
-
-                assert_includes(rbi_for(:Post), expected)
-              end
-
-              it "generates a weak type when the custom column type is a type variable" do
-                add_ruby_file("schema.rb", <<~RUBY)
-                  ActiveRecord::Migration.suppress_messages do
-                    ActiveRecord::Schema.define do
-                      create_table :posts do |t|
-                        t.decimal :cost
-                      end
-                    end
-                  end
-                RUBY
-
-                add_ruby_file("column_type.rb", <<~RUBY)
-                  class ColumnType < ActiveRecord::Type::Value
-                    extend(T::Sig)
-                    extend T::Generic
-
-                    Elem = type_member
-
-                    sig { params(value: Elem).returns(Numeric) }
-                    def serialize(value)
-                      super
-                    end
-                  end
-                RUBY
-
-                add_ruby_file("post.rb", <<~RUBY)
-                  class Post < ActiveRecord::Base
-                    attribute :cost, ColumnType[Integer].new
-                  end
-                RUBY
-
-                expected = indented(<<~RUBY, 4)
-                  sig { returns(T.untyped) }
-                  def cost; end
-
-                  sig { params(value: T.untyped).returns(T.untyped) }
-                  def cost=(value); end
-                RUBY
-
-                assert_includes(rbi_for(:Post), expected)
-              end
-
-              it "generates a weak type if custom type cannot be discovered from signatures" do
-                add_ruby_file("schema.rb", <<~RUBY)
-                  ActiveRecord::Migration.suppress_messages do
-                    ActiveRecord::Schema.define do
-                      create_table :posts do |t|
-                        t.decimal :cost
-                      end
-                    end
-                  end
-                RUBY
-
-                add_ruby_file("custom_type.rb", <<~RUBY)
-                  class CustomType
-                    attr_accessor :value
-
-                    def initialize(number = 0.0)
-                      @value = number
-                    end
-
-                    class Type < ActiveRecord::Type::Value
-                      extend(T::Sig)
-
-                      def deserialize(value)
-                        CustomType.new(value)
-                      end
-                    end
-                  end
-                RUBY
-
-                add_ruby_file("post.rb", <<~RUBY)
-                  class Post < ActiveRecord::Base
-                    attribute :cost, CustomType::Type.new
-                  end
-                RUBY
-
-                expected = indented(<<~RBI, 4)
-                  sig { returns(T.untyped) }
-                  def cost; end
-
-                  sig { params(value: T.untyped).returns(T.untyped) }
-                  def cost=(value); end
+                  sig { returns(T.nilable(::Integer)) }
+                  def id; end
                 RBI
 
                 assert_includes(rbi_for(:Post), expected)
@@ -1077,7 +990,7 @@ module Tapioca
                   end
                 RUBY
 
-                expected = <<~RBI
+                expected = template(<<~RBI, trim_mode: "-")
                   # typed: strong
 
                   class Post
@@ -1123,6 +1036,53 @@ module Tapioca
                       sig { returns(T.nilable(::Integer)) }
                       def id_previously_was; end
 
+                    <%- if rails_version(">= 7.1") -%>
+                      sig { returns(T.nilable(::Integer)) }
+                      def id_value; end
+
+                      sig { params(value: ::Integer).returns(::Integer) }
+                      def id_value=(value); end
+
+                      sig { returns(T::Boolean) }
+                      def id_value?; end
+
+                      sig { returns(T.nilable(::Integer)) }
+                      def id_value_before_last_save; end
+
+                      sig { returns(T.untyped) }
+                      def id_value_before_type_cast; end
+
+                      sig { returns(T::Boolean) }
+                      def id_value_came_from_user?; end
+
+                      sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                      def id_value_change; end
+
+                      sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                      def id_value_change_to_be_saved; end
+
+                      sig { params(from: ::Integer, to: ::Integer).returns(T::Boolean) }
+                      def id_value_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                      sig { returns(T.nilable(::Integer)) }
+                      def id_value_in_database; end
+
+                      sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                      def id_value_previous_change; end
+
+                      sig { params(from: ::Integer, to: ::Integer).returns(T::Boolean) }
+                      def id_value_previously_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                      sig { returns(T.nilable(::Integer)) }
+                      def id_value_previously_was; end
+
+                      sig { returns(T.nilable(::Integer)) }
+                      def id_value_was; end
+
+                      sig { void }
+                      def id_value_will_change!; end
+
+                    <%- end -%>
                       sig { returns(T.nilable(::Integer)) }
                       def id_was; end
 
@@ -1132,14 +1092,33 @@ module Tapioca
                       sig { void }
                       def restore_id!; end
 
+                    <%- if rails_version(">= 7.1") -%>
+                      sig { void }
+                      def restore_id_value!; end
+
+                    <%- end -%>
                       sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
                       def saved_change_to_id; end
 
                       sig { returns(T::Boolean) }
                       def saved_change_to_id?; end
 
+                    <%- if rails_version(">= 7.1") -%>
+                      sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                      def saved_change_to_id_value; end
+
+                      sig { returns(T::Boolean) }
+                      def saved_change_to_id_value?; end
+
                       sig { returns(T::Boolean) }
                       def will_save_change_to_id?; end
+
+                      sig { returns(T::Boolean) }
+                      def will_save_change_to_id_value?; end
+                    <%- else -%>
+                      sig { returns(T::Boolean) }
+                      def will_save_change_to_id?; end
+                    <%- end -%>
                     end
                   end
                 RBI
@@ -1163,7 +1142,7 @@ module Tapioca
                   end
                 RUBY
 
-                expected = <<~RBI
+                expected = template(<<~RBI, trim_mode: "-")
                   # typed: strong
 
                   class Post
@@ -1209,6 +1188,53 @@ module Tapioca
                       sig { returns(T.untyped) }
                       def id_previously_was; end
 
+                    <%- if rails_version(">= 7.1") -%>
+                      sig { returns(T.untyped) }
+                      def id_value; end
+
+                      sig { params(value: T.untyped).returns(T.untyped) }
+                      def id_value=(value); end
+
+                      sig { returns(T::Boolean) }
+                      def id_value?; end
+
+                      sig { returns(T.untyped) }
+                      def id_value_before_last_save; end
+
+                      sig { returns(T.untyped) }
+                      def id_value_before_type_cast; end
+
+                      sig { returns(T::Boolean) }
+                      def id_value_came_from_user?; end
+
+                      sig { returns(T.nilable([T.untyped, T.untyped])) }
+                      def id_value_change; end
+
+                      sig { returns(T.nilable([T.untyped, T.untyped])) }
+                      def id_value_change_to_be_saved; end
+
+                      sig { params(from: T.untyped, to: T.untyped).returns(T::Boolean) }
+                      def id_value_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                      sig { returns(T.untyped) }
+                      def id_value_in_database; end
+
+                      sig { returns(T.nilable([T.untyped, T.untyped])) }
+                      def id_value_previous_change; end
+
+                      sig { params(from: T.untyped, to: T.untyped).returns(T::Boolean) }
+                      def id_value_previously_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                      sig { returns(T.untyped) }
+                      def id_value_previously_was; end
+
+                      sig { returns(T.untyped) }
+                      def id_value_was; end
+
+                      sig { void }
+                      def id_value_will_change!; end
+
+                    <%- end -%>
                       sig { returns(T.untyped) }
                       def id_was; end
 
@@ -1218,14 +1244,33 @@ module Tapioca
                       sig { void }
                       def restore_id!; end
 
+                    <%- if rails_version(">= 7.1") -%>
+                      sig { void }
+                      def restore_id_value!; end
+
+                    <%- end -%>
                       sig { returns(T.nilable([T.untyped, T.untyped])) }
                       def saved_change_to_id; end
 
                       sig { returns(T::Boolean) }
                       def saved_change_to_id?; end
 
+                    <%- if rails_version(">= 7.1") -%>
+                      sig { returns(T.nilable([T.untyped, T.untyped])) }
+                      def saved_change_to_id_value; end
+
+                      sig { returns(T::Boolean) }
+                      def saved_change_to_id_value?; end
+
                       sig { returns(T::Boolean) }
                       def will_save_change_to_id?; end
+
+                      sig { returns(T::Boolean) }
+                      def will_save_change_to_id_value?; end
+                    <%- else -%>
+                      sig { returns(T::Boolean) }
+                      def will_save_change_to_id?; end
+                    <%- end -%>
                     end
                   end
                 RBI
@@ -1263,6 +1308,211 @@ module Tapioca
                 RBI
 
                 assert_includes(rbi_for(:Post), expected)
+              end
+
+              if rails_version(">= 7.1")
+                it "generates composite id type if models has composite primary keys" do
+                  T.bind(self, ActiveRecordColumnsSpec)
+                  add_ruby_file("schema.rb", <<~RUBY)
+                    ActiveRecord::Migration.suppress_messages do
+                      ActiveRecord::Schema.define do
+                        create_table(:posts, primary_key: [:id, :blog_id]) do |t|
+                          t.integer :id
+                          t.integer :blog_id
+                        end
+                      end
+                    end
+                  RUBY
+
+                  add_ruby_file("post.rb", <<~RUBY)
+                    class Post < ActiveRecord::Base
+                      extend StrongTypeGeneration
+                    end
+                  RUBY
+
+                  expected = <<~RBI
+                    # typed: strong
+
+                    class Post
+                      include GeneratedAttributeMethods
+
+                      module GeneratedAttributeMethods
+                        sig { returns(T.nilable(::Integer)) }
+                        def blog_id; end
+
+                        sig { params(value: T.nilable(::Integer)).returns(T.nilable(::Integer)) }
+                        def blog_id=(value); end
+
+                        sig { returns(T::Boolean) }
+                        def blog_id?; end
+
+                        sig { returns(T.nilable(::Integer)) }
+                        def blog_id_before_last_save; end
+
+                        sig { returns(T.untyped) }
+                        def blog_id_before_type_cast; end
+
+                        sig { returns(T::Boolean) }
+                        def blog_id_came_from_user?; end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def blog_id_change; end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def blog_id_change_to_be_saved; end
+
+                        sig { params(from: T.nilable(::Integer), to: T.nilable(::Integer)).returns(T::Boolean) }
+                        def blog_id_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                        sig { returns(T.nilable(::Integer)) }
+                        def blog_id_in_database; end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def blog_id_previous_change; end
+
+                        sig { params(from: T.nilable(::Integer), to: T.nilable(::Integer)).returns(T::Boolean) }
+                        def blog_id_previously_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                        sig { returns(T.nilable(::Integer)) }
+                        def blog_id_previously_was; end
+
+                        sig { returns(T.nilable(::Integer)) }
+                        def blog_id_was; end
+
+                        sig { void }
+                        def blog_id_will_change!; end
+
+                        sig { returns([T.nilable(::Integer), T.nilable(::Integer)]) }
+                        def id; end
+
+                        sig { params(value: [T.nilable(::Integer), T.nilable(::Integer)]).returns([T.nilable(::Integer), T.nilable(::Integer)]) }
+                        def id=(value); end
+
+                        sig { returns(T::Boolean) }
+                        def id?; end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def id_before_last_save; end
+
+                        sig { returns(T.untyped) }
+                        def id_before_type_cast; end
+
+                        sig { returns(T::Boolean) }
+                        def id_came_from_user?; end
+
+                        sig { returns(T.nilable([[T.nilable(::Integer), T.nilable(::Integer)], [T.nilable(::Integer), T.nilable(::Integer)]])) }
+                        def id_change; end
+
+                        sig { returns(T.nilable([[T.nilable(::Integer), T.nilable(::Integer)], [T.nilable(::Integer), T.nilable(::Integer)]])) }
+                        def id_change_to_be_saved; end
+
+                        sig { params(from: [T.nilable(::Integer), T.nilable(::Integer)], to: [T.nilable(::Integer), T.nilable(::Integer)]).returns(T::Boolean) }
+                        def id_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def id_in_database; end
+
+                        sig { returns(T.nilable([[T.nilable(::Integer), T.nilable(::Integer)], [T.nilable(::Integer), T.nilable(::Integer)]])) }
+                        def id_previous_change; end
+
+                        sig { params(from: [T.nilable(::Integer), T.nilable(::Integer)], to: [T.nilable(::Integer), T.nilable(::Integer)]).returns(T::Boolean) }
+                        def id_previously_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def id_previously_was; end
+
+                        sig { returns(T.nilable(::Integer)) }
+                        def id_value; end
+
+                        sig { params(value: T.nilable(::Integer)).returns(T.nilable(::Integer)) }
+                        def id_value=(value); end
+
+                        sig { returns(T::Boolean) }
+                        def id_value?; end
+
+                        sig { returns(T.nilable(::Integer)) }
+                        def id_value_before_last_save; end
+
+                        sig { returns(T.untyped) }
+                        def id_value_before_type_cast; end
+
+                        sig { returns(T::Boolean) }
+                        def id_value_came_from_user?; end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def id_value_change; end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def id_value_change_to_be_saved; end
+
+                        sig { params(from: T.nilable(::Integer), to: T.nilable(::Integer)).returns(T::Boolean) }
+                        def id_value_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                        sig { returns(T.nilable(::Integer)) }
+                        def id_value_in_database; end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def id_value_previous_change; end
+
+                        sig { params(from: T.nilable(::Integer), to: T.nilable(::Integer)).returns(T::Boolean) }
+                        def id_value_previously_changed?(from: T.unsafe(nil), to: T.unsafe(nil)); end
+
+                        sig { returns(T.nilable(::Integer)) }
+                        def id_value_previously_was; end
+
+                        sig { returns(T.nilable(::Integer)) }
+                        def id_value_was; end
+
+                        sig { void }
+                        def id_value_will_change!; end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def id_was; end
+
+                        sig { void }
+                        def id_will_change!; end
+
+                        sig { void }
+                        def restore_blog_id!; end
+
+                        sig { void }
+                        def restore_id!; end
+
+                        sig { void }
+                        def restore_id_value!; end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def saved_change_to_blog_id; end
+
+                        sig { returns(T::Boolean) }
+                        def saved_change_to_blog_id?; end
+
+                        sig { returns(T.nilable([[T.nilable(::Integer), T.nilable(::Integer)], [T.nilable(::Integer), T.nilable(::Integer)]])) }
+                        def saved_change_to_id; end
+
+                        sig { returns(T::Boolean) }
+                        def saved_change_to_id?; end
+
+                        sig { returns(T.nilable([T.nilable(::Integer), T.nilable(::Integer)])) }
+                        def saved_change_to_id_value; end
+
+                        sig { returns(T::Boolean) }
+                        def saved_change_to_id_value?; end
+
+                        sig { returns(T::Boolean) }
+                        def will_save_change_to_blog_id?; end
+
+                        sig { returns(T::Boolean) }
+                        def will_save_change_to_id?; end
+
+                        sig { returns(T::Boolean) }
+                        def will_save_change_to_id_value?; end
+                      end
+                    end
+                  RBI
+
+                  assert_equal(rbi_for(:Post), expected)
+                end
               end
 
               it "generates attributes with weak types if model does not extend StrongTypeGeneration" do

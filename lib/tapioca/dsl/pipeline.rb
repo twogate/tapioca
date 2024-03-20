@@ -61,7 +61,7 @@ module Tapioca
           .sort_by! { |c| T.must(Runtime::Reflection.name_of(c)) }
 
         # It's OK if there are no constants to process if we received a valid file/path.
-        if constants_to_process.empty? && requested_paths.select { |p| File.exist?(p) }.empty?
+        if constants_to_process.empty? && requested_paths.none? { |p| File.exist?(p) }
           report_error(<<~ERROR)
             No classes/modules can be matched for RBI generation.
             Please check that the requested classes/modules include processable DSL methods.
@@ -130,7 +130,10 @@ module Tapioca
 
       sig { params(requested_constants: T::Array[Module], requested_paths: T::Array[Pathname]).returns(T::Set[Module]) }
       def gather_constants(requested_constants, requested_paths)
-        constants = active_compilers.map(&:processable_constants).reduce(Set.new, :union)
+        constants = Set.new.compare_by_identity
+        active_compilers.each do |compiler|
+          constants.merge(compiler.processable_constants)
+        end
         constants = filter_anonymous_and_reloaded_constants(constants)
 
         constants &= requested_constants unless requested_constants.empty? && requested_paths.empty?
@@ -158,11 +161,12 @@ module Tapioca
 
         # Look up all the constants back from their names. The resulting constant set will be the
         # set of constants that are actually in memory with those names.
-        constants_by_name
+        filtered_constants = constants_by_name
           .keys
           .map { |name| T.cast(Runtime::Reflection.constantize(name), Module) }
           .select { |mod| Runtime::Reflection.constant_defined?(mod) }
-          .to_set
+
+        Set.new.compare_by_identity.merge(filtered_constants)
       end
 
       sig { params(constant: Module).returns(T.nilable(RBI::File)) }

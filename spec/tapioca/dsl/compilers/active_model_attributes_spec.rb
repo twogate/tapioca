@@ -8,6 +8,11 @@ module Tapioca
     module Compilers
       class ActiveModelAttributesSpec < ::DslSpec
         describe "Tapioca::Dsl::Compilers::ActiveModelAttributes" do
+          sig { void }
+          def before_setup
+            require "active_model"
+          end
+
           describe "initialize" do
             it "gathers no constants if there are no classes using ActiveModel::Attributes" do
               assert_empty(gathered_constants)
@@ -147,6 +152,38 @@ module Tapioca
 
                   sig { params(value: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
                   def test_shop=(value); end
+                end
+              RBI
+
+              assert_equal(expected, rbi_for(:Shop))
+            end
+
+            it "generates method sigs for attribute with custom type" do
+              add_ruby_file("shop.rb", <<~RUBY)
+                class CustomWithCastSig < ActiveModel::Type::Value
+                  extend T::Sig
+
+                  sig { params(value: T.untyped).returns(String) }
+                  def cast(value)
+                  end
+                end
+
+                class Shop
+                  include ActiveModel::Attributes
+
+                  attribute :custom_with_cast_sig_attr, CustomWithCastSig.new
+                end
+              RUBY
+
+              expected = <<~RBI
+                # typed: strong
+
+                class Shop
+                  sig { returns(T.nilable(::String)) }
+                  def custom_with_cast_sig_attr; end
+
+                  sig { params(value: T.nilable(::String)).returns(T.nilable(::String)) }
+                  def custom_with_cast_sig_attr=(value); end
                 end
               RBI
 

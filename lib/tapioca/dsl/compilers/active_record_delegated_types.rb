@@ -1,11 +1,7 @@
 # typed: strict
 # frozen_string_literal: true
 
-begin
-  require "active_record"
-rescue LoadError
-  return
-end
+return unless defined?(ActiveRecord::Base)
 
 require "tapioca/dsl/helpers/active_record_column_type_helper"
 require "tapioca/dsl/helpers/active_record_constants_helper"
@@ -110,11 +106,10 @@ module Tapioca
             return_type: "ActiveSupport::StringInquirer",
           )
 
-          return_type = sorbet_supports?(:generic_class) ? "T::Class[T.anything]" : "Class"
           mod.create_method(
             "#{role}_class",
             parameters: [],
-            return_type: return_type,
+            return_type: "T::Class[T.anything]",
           )
 
           mod.create_method(
