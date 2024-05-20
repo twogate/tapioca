@@ -52,6 +52,7 @@ Tapioca makes it easy to work with [Sorbet](https://sorbet.org) in your codebase
   * [RBI files for missing constants and methods](#rbi-files-for-missing-constants-and-methods)
   * [Configuration](#configuration)
 * [Contributing](#contributing)
+  * [DSL compilers](#dsl-compilers)
 * [License](#license)
 <!-- END_TOC -->
 
@@ -499,6 +500,7 @@ Options:
                                                                                                    # Default: .
              [--halt-upon-load-error], [--no-halt-upon-load-error], [--skip-halt-upon-load-error]  # Halt upon a load error while loading the Rails application
                                                                                                    # Default: true
+             [--skip-constant=constant [constant ...]]                                             # Do not generate RBI definitions for the given application constant(s)
   -c,        [--config=<config file path>]                                                         # Path to the Tapioca configuration file
                                                                                                    # Default: sorbet/tapioca/config.yml
   -V,        [--verbose], [--no-verbose], [--skip-verbose]                                         # Verbose output for debugging purposes
@@ -884,7 +886,7 @@ Check duplicated definitions in shim RBIs
 ```
 <!-- END_HELP_COMMAND_CHECK_SHIMS -->
 
-Depending on the amount of meta-programming used in your project this can mean an overwhelming amount of manual work. In this case, you should consider [writting a custom DSL compiler](#writing-custom-dsl-compilers).
+Depending on the amount of meta-programming used in your project this can mean an overwhelming amount of manual work. In this case, you should consider [writing a custom DSL compiler](#writing-custom-dsl-compilers).
 
 ### Configuration
 
@@ -932,6 +934,7 @@ dsl:
   list_compilers: false
   app_root: "."
   halt_upon_load_error: true
+  skip_constant: []
 gem:
   outdir: sorbet/rbi/gems
   file_header: true
@@ -972,6 +975,10 @@ annotations:
 ## Contributing
 
 Bug reports and pull requests are welcome on GitHub at https://github.com/Shopify/tapioca. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [Contributor Covenant](https://github.com/Shopify/tapioca/blob/main/CODE_OF_CONDUCT.md) code of conduct.
+
+### DSL compilers
+
+Contributions to existing DSL compilers are welcome. However, new compilers that support DSLs for gems other than Rails should live outside of Tapioca. Please refer to [writing custom dsl compilers](https://github.com/Shopify/tapioca?tab=readme-ov-file#writing-custom-dsl-compilers) for more information.
 
 ## License
 

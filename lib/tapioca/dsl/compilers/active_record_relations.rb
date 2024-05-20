@@ -3,6 +3,7 @@
 
 return unless defined?(ActiveRecord::Base)
 
+require "tapioca/dsl/helpers/active_model_type_helper"
 require "tapioca/dsl/helpers/active_record_constants_helper"
 
 module Tapioca
@@ -24,15 +25,15 @@ module Tapioca
       # 1. A `Model::PrivateRelation` that subclasses `ActiveRecord::Relation`. This synthetic class represents
       # a relation on `Model` whose methods which return a relation always return a `Model::PrivateRelation` instance.
       #
-      # 2. `Model::PrivateAssocationRelation` that subclasses `ActiveRecord::AssociationRelation`. This synthetic
+      # 2. `Model::PrivateAssociationRelation` that subclasses `ActiveRecord::AssociationRelation`. This synthetic
       # class represents a relation on a singular association of type `Model` (e.g. `foo.model`) whose methods which
-      # return a relation will always return a `Model::PrivateAssocationRelation` instance. The difference between this
+      # return a relation will always return a `Model::PrivateAssociationRelation` instance. The difference between this
       # class and the previous one is mainly that an association relation also keeps track of the resource association
       # for this relation.
       #
       # 3. `Model::PrivateCollectionProxy` that subclasses from `ActiveRecord::Associations::CollectionProxy`.
       # This synthetic class represents a relation on a plural association of type `Model` (e.g. `foo.models`)
-      # whose methods which return a relation will always return a `Model::PrivateAssocationRelation` instance.
+      # whose methods which return a relation will always return a `Model::PrivateAssociationRelation` instance.
       # This class represents a collection of `Model` instances with some extra methods to `build`, `create`,
       # etc new `Model` instances in the collection.
       #
@@ -364,7 +365,8 @@ module Tapioca
                 parameters: [
                   create_param("column_name", type: "T.any(String, Symbol)"),
                 ],
-                return_type: "T::Hash[T.untyped, #{method_name == :average ? "Numeric" : "T.untyped"}]",
+                return_type: "T::Hash[T.untyped, " \
+                  "#{method_name == :average ? "T.any(Integer, Float, BigDecimal)" : "T.untyped"}]",
               )
             when :calculate
               klass.create_method(
@@ -373,7 +375,7 @@ module Tapioca
                   create_param("operation", type: "Symbol"),
                   create_param("column_name", type: "T.any(String, Symbol)"),
                 ],
-                return_type: "T::Hash[T.untyped, Numeric]",
+                return_type: "T::Hash[T.untyped, T.any(Integer, Float, BigDecimal)]",
               )
             when :count
               klass.create_method(
@@ -390,7 +392,7 @@ module Tapioca
                   create_opt_param("column_name", type: "T.nilable(T.any(String, Symbol))", default: "nil"),
                   create_block_param("block", type: "T.nilable(T.proc.params(record: T.untyped).returns(T.untyped))"),
                 ],
-                return_type: "T::Hash[T.untyped, Numeric]",
+                return_type: "T::Hash[T.untyped, T.any(Integer, Float, BigDecimal)]",
               )
             end
           end
@@ -562,13 +564,34 @@ module Tapioca
           )
 
           QUERY_METHODS.each do |method_name|
-            create_relation_method(
-              method_name,
-              parameters: [
-                create_rest_param("args", type: "T.untyped"),
-                create_block_param("blk", type: "T.untyped"),
-              ],
-            )
+            case method_name
+            when :distinct
+              create_relation_method(
+                method_name.to_s,
+                parameters: [create_opt_param("value", type: "T::Boolean", default: "true")],
+              )
+            when :extract_associated
+              parameters = [create_param("association", type: "Symbol")]
+              return_type = "T::Array[T.untyped]"
+              relation_methods_module.create_method(
+                method_name.to_s,
+                parameters: parameters,
+                return_type: return_type,
+              )
+              association_relation_methods_module.create_method(
+                method_name.to_s,
+                parameters: parameters,
+                return_type: return_type,
+              )
+            else
+              create_relation_method(
+                method_name,
+                parameters: [
+                  create_rest_param("args", type: "T.untyped"),
+                  create_block_param("blk", type: "T.untyped"),
+                ],
+              )
+            end
           end
         end
 
@@ -644,28 +667,56 @@ module Tapioca
               )
             when :find
               # From ActiveRecord::ConnectionAdapter::Quoting#quote, minus nil
-              id_types = "T.any(String, Symbol, ::ActiveSupport::Multibyte::Chars, T::Boolean, BigDecimal, Numeric, " \
-                "::ActiveRecord::Type::Binary::Data, ::ActiveRecord::Type::Time::Value, Date, Time, " \
-                "::ActiveSupport::Duration, T::Class[T.anything])"
+              id_types = [
+                "String",
+                "Symbol",
+                "::ActiveSupport::Multibyte::Chars",
+                "T::Boolean",
+                "BigDecimal",
+                "Numeric",
+                "::ActiveRecord::Type::Binary::Data",
+                "::ActiveRecord::Type::Time::Value",
+                "Date",
+                "Time",
+                "::ActiveSupport::Duration",
+                "T::Class[T.anything]",
+              ].to_set
+
+              if constant.table_exists?
+                primary_key_type = constant.type_for_attribute(constant.primary_key)
+                type = Tapioca::Dsl::Helpers::ActiveModelTypeHelper.type_for(primary_key_type)
+                type = RBIHelper.as_non_nilable_type(type)
+                id_types << type if type != "T.untyped"
+              end
+
+              id_types = "T.any(#{id_types.to_a.join(", ")})"
+
               array_type = if constant.try(:composite_primary_key?)
-                "T::Array[T::Array[#{id_types}]"
+                "T::Array[T::Array[#{id_types}]]"
               else
                 "T::Array[#{id_types}]"
               end
               sigs = [
                 common_relation_methods_module.create_sig(
-                  parameters: [create_param("args", type: id_types)],
+                  parameters: { args: id_types },
                   return_type: constant_name,
                 ),
                 common_relation_methods_module.create_sig(
-                  parameters: [create_param("args", type: array_type)],
+                  parameters: { args: array_type },
                   return_type: "T::Enumerable[#{constant_name}]",
+                ),
+                common_relation_methods_module.create_sig(
+                  parameters: {
+                    args: "NilClass",
+                    block: "T.proc.params(object: #{constant_name}).void",
+                  },
+                  return_type: as_nilable_type(constant_name),
                 ),
               ]
               common_relation_methods_module.create_method_with_sigs(
                 "find",
                 sigs: sigs,
-                parameters: [RBI::ReqParam.new("args")],
+                parameters: [RBI::OptParam.new("args", "nil"), RBI::BlockParam.new("block")],
               )
             when :find_by
               create_common_method(
@@ -701,11 +752,11 @@ module Tapioca
             when :first, :last, :take
               sigs = [
                 common_relation_methods_module.create_sig(
-                  parameters: [create_opt_param("limit", type: "NilClass", default: "nil")],
+                  parameters: { limit: "NilClass" },
                   return_type: as_nilable_type(constant_name),
                 ),
                 common_relation_methods_module.create_sig(
-                  parameters: [create_param("limit", type: "Integer")],
+                  parameters: { limit: "Integer" },
                   return_type: "T::Array[#{constant_name}]",
                 ),
               ]
@@ -761,7 +812,7 @@ module Tapioca
                 parameters: [
                   create_param("column_name", type: "T.any(String, Symbol)"),
                 ],
-                return_type: method_name == :average ? "Numeric" : "T.untyped",
+                return_type: method_name == :average ? "T.any(Integer, Float, BigDecimal)" : "T.untyped",
               )
             when :calculate
               create_common_method(
@@ -770,15 +821,26 @@ module Tapioca
                   create_param("operation", type: "Symbol"),
                   create_param("column_name", type: "T.any(String, Symbol)"),
                 ],
-                return_type: "Numeric",
+                return_type: "T.any(Integer, Float, BigDecimal)",
               )
             when :count
-              create_common_method(
+              sigs = [
+                common_relation_methods_module.create_sig(
+                  parameters: { column_name: "T.nilable(T.any(String, Symbol))" },
+                  return_type: "Integer",
+                ),
+                common_relation_methods_module.create_sig(
+                  parameters: { column_name: "NilClass", block: "T.proc.params(object: #{constant_name}).void" },
+                  return_type: "Integer",
+                ),
+              ]
+              common_relation_methods_module.create_method_with_sigs(
                 "count",
+                sigs: sigs,
                 parameters: [
-                  create_opt_param("column_name", type: "T.untyped", default: "nil"),
+                  RBI::OptParam.new("column_name", "nil"),
+                  RBI::BlockParam.new("block"),
                 ],
-                return_type: "Integer",
               )
             when :ids
               create_common_method("ids", return_type: "Array")
@@ -791,13 +853,28 @@ module Tapioca
                 return_type: "T.untyped",
               )
             when :sum
-              create_common_method(
-                "sum",
+              sigs = [
+                common_relation_methods_module.create_sig(
+                  parameters: { initial_value_or_column: "T.untyped" },
+                  return_type: "T.any(Integer, Float, BigDecimal)",
+                ),
+                common_relation_methods_module.create_sig(
+                  type_parameters: ["U"],
+                  parameters:
+                  {
+                    initial_value_or_column: "T.nilable(T.type_parameter(:U))",
+                    block: "T.proc.params(object: #{constant_name}).returns(T.type_parameter(:U))",
+                  },
+                  return_type: "T.type_parameter(:U)",
+                ),
+              ]
+              common_relation_methods_module.create_method_with_sigs(
+                method_name.to_s,
+                sigs: sigs,
                 parameters: [
-                  create_opt_param("column_name", type: "T.nilable(T.any(String, Symbol))", default: "nil"),
-                  create_block_param("block", type: "T.nilable(T.proc.params(record: T.untyped).returns(T.untyped))"),
+                  RBI::OptParam.new("initial_value_or_column", "nil"),
+                  RBI::BlockParam.new("block"),
                 ],
-                return_type: "Numeric",
               )
             end
           end
@@ -806,26 +883,20 @@ module Tapioca
             case method_name
             when :find_each
               order = ActiveRecord::Batches.instance_method(:find_each).parameters.include?([:key, :order])
+              parameters = {
+                start: "T.untyped",
+                finish: "T.untyped",
+                batch_size: "Integer",
+                error_on_ignore: "T.untyped",
+                order: ("Symbol" if order),
+              }.compact
               sigs = [
                 common_relation_methods_module.create_sig(
-                  parameters: [
-                    create_kw_opt_param("start", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("finish", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("batch_size", type: "Integer", default: "1000"),
-                    create_kw_opt_param("error_on_ignore", type: "T.untyped", default: "nil"),
-                    *(create_kw_opt_param("order", type: "Symbol", default: ":asc") if order),
-                    create_block_param("block", type: "T.proc.params(object: #{constant_name}).void"),
-                  ],
+                  parameters: parameters.merge(block: "T.proc.params(object: #{constant_name}).void"),
                   return_type: "void",
                 ),
                 common_relation_methods_module.create_sig(
-                  parameters: [
-                    create_kw_opt_param("start", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("finish", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("batch_size", type: "Integer", default: "1000"),
-                    create_kw_opt_param("error_on_ignore", type: "T.untyped", default: "nil"),
-                    *(create_kw_opt_param("order", type: "Symbol", default: ":asc") if order),
-                  ],
+                  parameters: parameters,
                   return_type: "T::Enumerator[#{constant_name}]",
                 ),
               ]
@@ -843,26 +914,20 @@ module Tapioca
               )
             when :find_in_batches
               order = ActiveRecord::Batches.instance_method(:find_in_batches).parameters.include?([:key, :order])
+              parameters = {
+                start: "T.untyped",
+                finish: "T.untyped",
+                batch_size: "Integer",
+                error_on_ignore: "T.untyped",
+                order: ("Symbol" if order),
+              }.compact
               sigs = [
                 common_relation_methods_module.create_sig(
-                  parameters: [
-                    create_kw_opt_param("start", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("finish", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("batch_size", type: "Integer", default: "1000"),
-                    create_kw_opt_param("error_on_ignore", type: "T.untyped", default: "nil"),
-                    *(create_kw_opt_param("order", type: "Symbol", default: ":asc") if order),
-                    create_block_param("block", type: "T.proc.params(object: T::Array[#{constant_name}]).void"),
-                  ],
+                  parameters: parameters.merge(block: "T.proc.params(object: T::Array[#{constant_name}]).void"),
                   return_type: "void",
                 ),
                 common_relation_methods_module.create_sig(
-                  parameters: [
-                    create_kw_opt_param("start", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("finish", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("batch_size", type: "Integer", default: "1000"),
-                    create_kw_opt_param("error_on_ignore", type: "T.untyped", default: "nil"),
-                    *(create_kw_opt_param("order", type: "Symbol", default: ":asc") if order),
-                  ],
+                  parameters: parameters,
                   return_type: "T::Enumerator[T::Enumerator[#{constant_name}]]",
                 ),
               ]
@@ -881,30 +946,22 @@ module Tapioca
             when :in_batches
               order = ActiveRecord::Batches.instance_method(:in_batches).parameters.include?([:key, :order])
               use_ranges = ActiveRecord::Batches.instance_method(:in_batches).parameters.include?([:key, :use_ranges])
+              parameters = {
+                of: "Integer",
+                start: "T.untyped",
+                finish: "T.untyped",
+                load: "T.untyped",
+                error_on_ignore: "T.untyped",
+                order: ("Symbol" if order),
+                use_ranges: ("T.untyped" if use_ranges),
+              }.compact
               sigs = [
                 common_relation_methods_module.create_sig(
-                  parameters: [
-                    create_kw_opt_param("of", type: "Integer", default: "1000"),
-                    create_kw_opt_param("start", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("finish", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("load", type: "T.untyped", default: "false"),
-                    create_kw_opt_param("error_on_ignore", type: "T.untyped", default: "nil"),
-                    *(create_kw_opt_param("order", type: "Symbol", default: ":asc") if order),
-                    *(create_kw_opt_param("use_ranges", type: "T.untyped", default: "nil") if use_ranges),
-                    create_block_param("block", type: "T.proc.params(object: #{RelationClassName}).void"),
-                  ],
+                  parameters: parameters.merge(block: "T.proc.params(object: #{RelationClassName}).void"),
                   return_type: "void",
                 ),
                 common_relation_methods_module.create_sig(
-                  parameters: [
-                    create_kw_opt_param("of", type: "Integer", default: "1000"),
-                    create_kw_opt_param("start", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("finish", type: "T.untyped", default: "nil"),
-                    create_kw_opt_param("load", type: "T.untyped", default: "false"),
-                    create_kw_opt_param("error_on_ignore", type: "T.untyped", default: "nil"),
-                    *(create_kw_opt_param("order", type: "Symbol", default: ":asc") if order),
-                    *(create_kw_opt_param("use_ranges", type: "T.untyped", default: "nil") if use_ranges),
-                  ],
+                  parameters: parameters,
                   return_type: "::ActiveRecord::Batches::BatchEnumerator",
                 ),
               ]
