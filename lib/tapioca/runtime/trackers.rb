@@ -8,16 +8,12 @@ module Tapioca
     module Trackers
       extend T::Sig
 
-      @trackers = T.let([], T::Array[Tracker])
+      @trackers = [] #: Array[Tracker]
 
       class << self
         extend T::Sig
 
-        sig do
-          type_parameters(:Return)
-            .params(blk: T.proc.returns(T.type_parameter(:Return)))
-            .returns(T.type_parameter(:Return))
-        end
+        #: [Return] { -> Return } -> Return
         def with_trackers_enabled(&blk)
           # Currently this is a dirty hack to ensure disabling trackers
           # doesn't work while in the block passed to this method.
@@ -30,12 +26,12 @@ module Tapioca
           end
         end
 
-        sig { void }
+        #: -> void
         def disable_all!
           @trackers.each(&:disable!)
         end
 
-        sig { params(tracker: Tracker).void }
+        #: (Tracker tracker) -> void
         def register_tracker(tracker)
           @trackers << tracker
         end
@@ -56,3 +52,4 @@ require "tapioca/runtime/trackers/mixin"
 require "tapioca/runtime/trackers/constant_definition"
 require "tapioca/runtime/trackers/autoload"
 require "tapioca/runtime/trackers/required_ancestor"
+require "tapioca/runtime/trackers/method_definition"

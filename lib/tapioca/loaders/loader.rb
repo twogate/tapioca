@@ -3,29 +3,20 @@
 
 module Tapioca
   module Loaders
+    # @abstract
     class Loader
       extend T::Sig
-      extend T::Helpers
-
       include Thor::Base
       include CliHelper
       include Tapioca::GemHelper
 
-      abstract!
-
-      sig { abstract.void }
-      def load; end
+      # @abstract
+      #: -> void
+      def load = raise NotImplementedError, "Abstract method called"
 
       private
 
-      sig do
-        params(
-          gemfile: Tapioca::Gemfile,
-          initialize_file: T.nilable(String),
-          require_file: T.nilable(String),
-          halt_upon_load_error: T::Boolean,
-        ).void
-      end
+      #: (Tapioca::Gemfile gemfile, String? initialize_file, String? require_file, bool halt_upon_load_error) -> void
       def load_bundle(gemfile, initialize_file, require_file, halt_upon_load_error)
         require_helper(initialize_file)
 
@@ -38,21 +29,25 @@ module Tapioca
         load_rails_engines
       end
 
-      sig do
-        params(
-          environment_load: T::Boolean,
-          eager_load: T::Boolean,
-          app_root: String,
-          halt_upon_load_error: T::Boolean,
-        ).void
-      end
+      #: (?environment_load: bool, ?eager_load: bool, ?app_root: String, ?halt_upon_load_error: bool) -> void
       def load_rails_application(environment_load: false, eager_load: false, app_root: ".", halt_upon_load_error: true)
-        return unless File.exist?("#{app_root}/config/application.rb")
+        return unless File.exist?(File.expand_path("config/application.rb", app_root))
 
-        if environment_load
-          require "./#{app_root}/config/environment"
+        load_path = if environment_load
+          "config/environment"
         else
-          require "./#{app_root}/config/application"
+          "config/application"
+        end
+
+        require File.expand_path(load_path, app_root)
+
+        unless defined?(Rails)
+          say(
+            "\nTried to load the app from `#{load_path}` as a Rails application " \
+              "but the `Rails` constant wasn't defined after loading the file.",
+            :yellow,
+          )
+          return
         end
 
         eager_load_rails_app if eager_load
@@ -74,7 +69,7 @@ module Tapioca
         say("Continuing RBI generation without loading the Rails application.")
       end
 
-      sig { void }
+      #: -> void
       def load_rails_engines
         return if engines.empty?
 
@@ -99,29 +94,25 @@ module Tapioca
         end
       end
 
-      sig { void }
+      #: -> void
       def load_engines_in_zeitwerk_mode
-        # Collect all the directories that are already managed by all existing Zeitwerk loaders.
-        managed_dirs = Zeitwerk::Registry.loaders.flat_map(&:dirs).to_set
         # We use a fresh loader to load the engine directories, so that we don't interfere with
         # any of the existing loaders.
         autoloader = Zeitwerk::Loader.new
 
         engines.each do |engine|
           eager_load_paths(engine).each do |path|
-            # Zeitwerk only accepts existing directories in `push_dir`.
-            next unless File.directory?(path)
-            # We should not add directories that are already managed by a Zeitwerk loader.
-            next if managed_dirs.member?(path)
-
             autoloader.push_dir(path)
+          rescue Zeitwerk::Error
+            # The path is not an existing directory, or it is managed by
+            # some other loader, ..., it is fine, just skip it.
           end
         end
 
         autoloader.setup
       end
 
-      sig { void }
+      #: -> void
       def load_engines_in_classic_mode
         # This is code adapted from `Rails::Engine#eager_load!` in
         # https://github.com/rails/rails/blob/d9e188dbab81b412f73dfb7763318d52f360af49/railties/lib/rails/engine.rb#L489-L495
@@ -139,14 +130,14 @@ module Tapioca
         end
       end
 
-      sig { returns(T::Boolean) }
+      #: -> bool
       def zeitwerk_mode?
         Rails.respond_to?(:autoloaders) &&
           Rails.autoloaders.respond_to?(:zeitwerk_enabled?) &&
           Rails.autoloaders.zeitwerk_enabled?
       end
 
-      sig { params(blk: T.proc.void).void }
+      #: { -> void } -> void
       def with_rails_application(&blk)
         # Store the current Rails.application object so that we can restore it
         rails_application = T.unsafe(Rails.application)
@@ -163,7 +154,8 @@ module Tapioca
         Rails.app_class = Rails.application = rails_application
       end
 
-      T::Sig::WithoutRuntime.sig { returns(T::Array[T.class_of(Rails::Engine)]) }
+      # @without_runtime
+      #: -> Array[singleton(Rails::Engine)]
       def engines
         return [] unless defined?(Rails::Engine)
 
@@ -177,14 +169,14 @@ module Tapioca
           .reject { |engine| gem_in_app_dir?(project_path, engine.config.root.to_path) }
       end
 
-      sig { params(path: String).void }
+      #: (String path) -> void
       def safe_require(path)
         require path
       rescue LoadError
         nil
       end
 
-      sig { void }
+      #: -> void
       def eager_load_rails_app
         application = Rails.application
 
@@ -205,7 +197,7 @@ module Tapioca
         end
       end
 
-      sig { params(file: T.nilable(String)).void }
+      #: (String? file) -> void
       def require_helper(file)
         return unless file
 
@@ -219,7 +211,8 @@ module Tapioca
       # The `eager_load_paths` method still exists, but doesn't return all paths anymore and causes Tapioca to miss some
       # engine paths. The following commit is the change:
       # https://github.com/rails/rails/commit/ebfca905db14020589c22e6937382e6f8f687664
-      sig { params(engine: T.class_of(Rails::Engine)).returns(T::Array[String]) }
+      # @without_runtime
+      #: (singleton(Rails::Engine) engine) -> Array[String]
       def eager_load_paths(engine)
         config = engine.config
 

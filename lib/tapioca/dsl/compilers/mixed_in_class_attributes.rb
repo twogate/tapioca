@@ -44,12 +44,12 @@ module Tapioca
       #   end
       # end
       # ~~~
+      #: [ConstantType = Module]
       class MixedInClassAttributes < Compiler
         extend T::Sig
 
-        ConstantType = type_member { { fixed: Module } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           mixin_compiler = Runtime::DynamicMixinCompiler.new(constant)
           return if mixin_compiler.empty_attributes?
@@ -62,7 +62,8 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             # Select all non-anonymous modules that have overridden Module.included
             all_modules.select do |mod|

@@ -36,12 +36,17 @@ module Tapioca
       #   def self.perform_in(interval, customer_id); end
       # end
       # ~~~
+      #
+      # If your project uses `ActiveSupport` as well, then the compiler will automatically add its classes
+      # as accepted values for the `interval` parameter:
+      # * `self.perform_at` will also accept a `ActiveSupport::TimeWithZone` value
+      # * `self.perform_in` will also accept a `ActiveSupport::Duration` value
+      #: [ConstantType = singleton(::Sidekiq::Worker)]
       class SidekiqWorker < Compiler
         extend T::Sig
 
-        ConstantType = type_member { { fixed: T.class_of(::Sidekiq::Worker) } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           return unless constant.instance_methods.include?(:perform)
 
@@ -53,12 +58,22 @@ module Tapioca
             # `perform_at` and is just an alias for `perform_in` so both methods technically
             # accept a datetime, time, or numeric but we're typing them differently so they
             # semantically make sense.
+            at_return_type = if defined?(ActiveSupport::TimeWithZone)
+              "T.any(DateTime, Time, ActiveSupport::TimeWithZone)"
+            else
+              "T.any(DateTime, Time)"
+            end
             at_params = [
-              create_param("interval", type: "T.any(DateTime, Time)"),
+              create_param("interval", type: at_return_type),
               *async_params,
             ]
+            in_return_type = if defined?(ActiveSupport::Duration)
+              "T.any(Numeric, ActiveSupport::Duration)"
+            else
+              "Numeric"
+            end
             in_params = [
-              create_param("interval", type: "Numeric"),
+              create_param("interval", type: in_return_type),
               *async_params,
             ]
 
@@ -71,21 +86,16 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
-            all_classes.select { |c| c < Sidekiq::Worker }
+            all_classes.select { |c| Sidekiq::Worker > c }
           end
         end
 
         private
 
-        sig do
-          params(
-            worker: RBI::Scope,
-            method_name: String,
-            parameters: T::Array[RBI::TypedParam],
-          ).void
-        end
+        #: (RBI::Scope worker, String method_name, Array[RBI::TypedParam] parameters) -> void
         def generate_perform_method(worker, method_name, parameters)
           if constant.method(method_name.to_sym).owner == Sidekiq::Worker::ClassMethods
             worker.create_method(method_name, parameters: parameters, return_type: "String", class_method: true)

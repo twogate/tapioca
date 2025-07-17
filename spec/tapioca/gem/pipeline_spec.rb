@@ -12,12 +12,18 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
   include Tapioca::Helpers::Test::Isolation
   include Tapioca::SorbetHelper
 
-  DEFAULT_GEM_NAME = T.let("the-default-gem", String)
+  DEFAULT_GEM_NAME = "the-default-gem" #: String
+  NO_UNHANDLED_PIPELINE_COMPILATION_ERRORS_MESSAGE = <<~MSG
+    Tapioca::Gem::Pipeline#compile should not have any unhandled errors reported.
+    Please either fix your changes to ensure no errors are reported, or explicity pass
+    in a custom `error_handler: ->(err) { ... }` to the `compile()` method to handle
+    expected errors.
+  MSG
 
   private
 
-  sig { params(gem_name: String, include_doc: T::Boolean, include_loc: T::Boolean).returns(String) }
-  def compile(gem_name = DEFAULT_GEM_NAME, include_doc: false, include_loc: false)
+  #: (?String gem_name, ?include_doc: bool, ?include_loc: bool, ?reported_errors_expected: bool) -> String
+  def compile(gem_name = DEFAULT_GEM_NAME, include_doc: false, include_loc: false, reported_errors_expected: false)
     mock_gem_path = mock_gems[gem_name]
 
     # If we are compiling for a mock gem, we need to create a fake gemspec
@@ -29,14 +35,22 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       end
 
       # add spec to the list of gem specification stubs
-      Gem::Specification.stubs[gem_name] = spec
+      Gem::Specification.add_spec(spec)
     end
 
     # wrap it in our gemspec wrapper
-    gem = Tapioca::Gemfile::GemSpec.new(Gem::Specification.stubs[gem_name].first)
+    gem = Tapioca::Gemfile::GemSpec.new(Gem::Specification.find_by_name(gem_name))
+
+    # clear out previously reported errors
+    reported_errors.clear
 
     # push it through the pipeline
-    tree = Tapioca::Gem::Pipeline.new(gem, include_doc: include_doc, include_loc: include_loc).compile
+    tree = Tapioca::Gem::Pipeline.new(
+      gem,
+      include_doc: include_doc,
+      include_loc: include_loc,
+      error_handler: ->(error) { reported_errors << error },
+    ).compile
 
     # NOTE: This is not returning a `RBI::File`.
     # The following test suite is based on the string output of the `RBI::Tree` rather
@@ -44,10 +58,11 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
     # We should eventually update these tests to be based on the `RBI::File`.
     Tapioca::DEFAULT_RBI_FORMATTER.format_tree(tree)
 
+    assert_empty(reported_errors, NO_UNHANDLED_PIPELINE_COMPILATION_ERRORS_MESSAGE) unless reported_errors_expected
     tree.string
   end
 
-  sig { params(gem_name: String, block: T.proc.void).void }
+  #: (String gem_name) { -> void } -> void
   def mock_gem(gem_name, &block)
     current_tmp_path = tmp_path
 
@@ -58,11 +73,16 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
     @tmp_path = current_tmp_path
   end
 
-  sig { returns(T::Hash[String, String]) }
+  #: -> Hash[String, String]
   def mock_gems
-    @gems ||= T.let({}, T.nilable(T::Hash[String, String]))
+    @gems ||= {} #: Hash[String, String]?
     @gems[DEFAULT_GEM_NAME] = tmp_path if @gems.empty?
     @gems
+  end
+
+  #: -> Array[String]
+  def reported_errors
+    @reported_errors ||= [] #: Array[String]?
   end
 
   describe Tapioca::Gem::Pipeline do
@@ -74,9 +94,14 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       # it looks like `before(:all)` blocks run in the parent process, but we don't
       # want to mess with the object space of the parent process.
       if defined?(::ActiveSupport)
-        Object.send(:remove_const, :ActiveSupport)
+        Object.send(:remove_const, :ActiveSupport) # rubocop:disable RSpec/RemoveConst
         $LOADED_FEATURES.delete_if { |path| path.include?("active_support") }
       end
+    end
+
+    after do
+      # clean up any lingering reported errors
+      reported_errors.clear
     end
 
     it "compiles DelegateClass" do
@@ -468,11 +493,7 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
         module SomeEngine::SomeController::HelperMethods
           include ::ActionController::Base::HelperMethods
 
-        <% if ruby_version(">= 3.1") %>
           def foo(*args, **_arg1, &block); end
-        <% else %>
-          def foo(*args, &block); end
-        <% end %>
         end
       RBI
 
@@ -554,6 +575,41 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
 
         class Baz < ::Bar; end
         module Foo; end
+      RBI
+
+      assert_equal(output, compile("foo"))
+    end
+
+    it "properly attributes dynamically-generated methods" do
+      mock_gem("bar") do
+        add_ruby_file("lib/bar.rb", <<~RUBY)
+          module ModuleFromBar
+            def add_method_to_me(method_name)
+              define_method(method_name) { 42 }
+            end
+          end
+        RUBY
+      end
+
+      mock_gem("foo") do
+        add_ruby_file("lib/foo.rb", <<~RUBY)
+          class Foo
+            extend ModuleFromBar
+
+            def foo; end
+
+            add_method_to_me :bar
+          end
+        RUBY
+      end
+
+      output = <<~RBI
+        class Foo
+          extend ::ModuleFromBar
+
+          def bar; end
+          def foo; end
+        end
       RBI
 
       assert_equal(output, compile("foo"))
@@ -1648,9 +1704,7 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           class << self
             def [](*_arg0); end
             def inspect; end
-        <% if ruby_version(">= 3.1") %>
             def keyword_init?; end
-        <% end %>
             def members; end
             def new(*_arg0); end
           end
@@ -1663,9 +1717,7 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           class << self
             def [](*_arg0); end
             def inspect; end
-        <% if ruby_version(">= 3.1") %>
             def keyword_init?; end
-        <% end %>
             def members; end
             def new(*_arg0); end
           end
@@ -3240,10 +3292,6 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           const :quuz, ::Integer, default: T.unsafe(nil)
           prop :fuzz, T.proc.returns(::String), default: T.unsafe(nil)
           prop :buzz, T.proc.void, default: T.unsafe(nil)
-
-          class << self
-            def inherited(s); end
-          end
         end
 
         class Baz
@@ -3747,6 +3795,32 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       assert_equal(output, compile)
     end
 
+    it "compiles generics with anonymous type arguments" do
+      add_ruby_file("foo.rb", <<~RUBY)
+        class Foo
+          class << self
+            extend T::Sig
+
+            class Bar; end
+
+            sig { returns(T::Array[Bar]) }
+            def foo; end
+          end
+        end
+      RUBY
+
+      output = template(<<~RBI)
+        class Foo
+          class << self
+            sig { returns(T::Array[::T.untyped]) }
+            def foo; end
+          end
+        end
+      RBI
+
+      assert_equal(output, compile)
+    end
+
     it "compiles structs with default values" do
       add_ruby_file("foo.rb", <<~RUBY)
         class Foo < T::Struct
@@ -3784,10 +3858,6 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           prop :l, T::Array[::Foo], default: T.unsafe(nil)
           prop :m, T::Hash[::Foo, ::Foo], default: T.unsafe(nil)
           prop :n, ::Foo, default: T.unsafe(nil)
-
-          class << self
-            def inherited(s); end
-          end
         end
       RBI
 
@@ -3861,7 +3931,7 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       assert_equal(output, compile)
     end
 
-    it "skips signatures if they raise" do
+    it "skips signatures and reports the errors if the sig block raises" do
       add_ruby_file("foo.rb", <<~RUBY)
         class Foo
           extend(T::Sig)
@@ -3900,13 +3970,24 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
         end
       RBI
 
-      assert_equal(output, compile)
+      assert_equal(output, compile(reported_errors_expected: true))
+      assert_equal(reported_errors, [
+        <<~ERROR,
+          Unable to compile signature for method: Foo#bar
+            Exception raised when loading signature: #<LoadError: LoadError>
+        ERROR
+        <<~ERROR,
+          Unable to compile signature for method: Foo#foo
+            Exception raised when loading signature: #<ArgumentError: ArgumentError>
+        ERROR
+      ])
     end
 
     it "handles signatures with attached classes" do
       add_ruby_file("foo.rb", <<~RUBY)
         class Foo
           class FooAttachedClass; end
+          class AttachedClass; end
           class << self
             extend(T::Sig)
 
@@ -3920,7 +4001,7 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
               { Foo.new => [Foo.new] }
             end
 
-            sig { returns(FooAttachedClass) }
+            sig { returns(T.any(FooAttachedClass, AttachedClass)) }
             def c
               FooAttachedClass.new
             end
@@ -3937,11 +4018,12 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
             sig { returns(T::Hash[T.attached_class, T::Array[T.attached_class]]) }
             def b; end
 
-            sig { returns(::Foo::FooAttachedClass) }
+            sig { returns(T.any(::Foo::AttachedClass, ::Foo::FooAttachedClass)) }
             def c; end
           end
         end
 
+        class Foo::AttachedClass; end
         class Foo::FooAttachedClass; end
       RBI
 
@@ -4036,6 +4118,50 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
         class Container::Baz; end
         class Container::FooClass; end
         module Container::FooModule; end
+      RBI
+
+      assert_equal(output, compile)
+    end
+
+    it "handles class_eval created methods" do
+      add_ruby_file("container.rb", <<~'RUBY')
+        class Foo
+          class_eval <<~EOF
+            def foo; end
+            def bar; end
+          EOF
+
+          class_eval <<~EOF, __FILE__, __LINE__ + 1
+            def baz; end
+            def qux; end
+          EOF
+
+          # Somehow defining methods in a loop triggers a different behavior
+          # in backtrace locations where the absolute path ends up being `nil`.
+          %w[string integer float boolean date datetime decimal money].each do |attr_type|
+            class_eval <<-EOV, __FILE__, __LINE__ + 1
+              def #{attr_type}
+              end
+            EOV
+          end
+        end
+      RUBY
+
+      output = template(<<~RBI)
+        class Foo
+          def bar; end
+          def baz; end
+          def boolean; end
+          def date; end
+          def datetime; end
+          def decimal; end
+          def float; end
+          def foo; end
+          def integer; end
+          def money; end
+          def qux; end
+          def string; end
+        end
       RBI
 
       assert_equal(output, compile)
@@ -4428,8 +4554,6 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
         NewClass = Class.new
       RB
 
-      sorbet_runtime_spec = ::Gem::Specification.find_by_name("sorbet-runtime")
-
       output = template(<<~RBI)
         # source://#{DEFAULT_GEM_NAME}//lib/bar.rb#1
         module Bar
@@ -4439,6 +4563,7 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           sig { void }
           def bar; end
 
+          # source://the-default-gem//lib/bar.rb#14
           def foo1; end
 
           # source://#{DEFAULT_GEM_NAME}//lib/bar.rb#15
@@ -4482,12 +4607,7 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
         class NewClass; end
 
         # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#16
-        class Quux < ::T::Struct
-          class << self
-            # source://sorbet-runtime/#{sorbet_runtime_spec.version}/lib/types/struct.rb#13
-            def inherited(s); end
-          end
-        end
+        class Quux < ::T::Struct; end
 
         # source://#{DEFAULT_GEM_NAME}//lib/foo.rb#19
         class String
@@ -4515,6 +4635,173 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       output = template(<<~RBI)
         class Foo; end
         Foo::BAR = T.let(T.unsafe(nil), T.untyped)
+      RBI
+
+      assert_equal(output, compile)
+    end
+
+    it "compiles RBS signatures" do
+      add_ruby_file("foo.rb", <<~RUBY)
+        # typed: strict
+
+        class Foo
+          #: String
+          attr_accessor :foo
+
+          #: (Integer a, b: String) -> void
+          def bar(a, b:); end
+
+          #: -> (^(String) -> void)
+          def self.baz; end
+
+          # @without_runtime
+          #: -> NotExisting
+          def qux; end
+
+          class << self
+            extend T::Sig
+
+            #: -> void
+            def qux; end
+          end
+        end
+      RUBY
+
+      output = template(<<~RBI)
+        class Foo
+          sig { params(a: ::Integer, b: ::String).void }
+          def bar(a, b:); end
+
+          sig { returns(::String) }
+          def foo; end
+
+          def foo=(_arg0); end
+          def qux; end
+
+          class << self
+            sig { returns(T.proc.params(arg0: ::String).void) }
+            def baz; end
+
+            sig { void }
+            def qux; end
+          end
+        end
+      RBI
+
+      assert_equal(output, compile)
+    end
+
+    it "compiles RBS signatures with nested namespaces" do
+      add_ruby_file("foo.rb", <<~RUBY)
+        # typed: true
+
+        class Foo
+          class Bar; end
+
+          class Baz
+            #: -> Bar
+            def foo
+              Bar.new
+            end
+          end
+        end
+      RUBY
+
+      output = template(<<~RBI)
+        class Foo; end
+        class Foo::Bar; end
+
+        class Foo::Baz
+          sig { returns(::Foo::Bar) }
+          def foo; end
+        end
+      RBI
+
+      assert_equal(output, compile)
+    end
+
+    it "does not compile yard comments as RBS" do
+      add_ruby_file("foo.rb", <<~RUBY)
+        # typed: true
+
+        class Foo
+          #:nodoc:
+          attr_reader :bar
+
+          #:yields:
+          def foo; end
+        end
+      RUBY
+
+      output = template(<<~RBI)
+        class Foo
+          def bar; end
+          def foo; end
+        end
+      RBI
+
+      assert_equal(output, compile)
+    end
+
+    it "does not compile RBS comments as yard documentation" do
+      add_ruby_file("foo.rb", <<~RUBY)
+        # typed: true
+
+        # @requires_ancestor: Kernel
+        class Foo
+          #: -> void
+          #:comment:
+          def foo; end
+
+          #: -> Array[
+          #| String
+          #| ]
+          def bar; end
+        end
+      RUBY
+
+      output = template(<<~RBI)
+        class Foo
+          requires_ancestor { Kernel }
+
+          sig { returns(T::Array[::String]) }
+          def bar; end
+
+          # :comment:
+          sig { void }
+          def foo; end
+        end
+      RBI
+
+      assert_equal(output, compile(include_doc: true))
+    end
+
+    it "ignores RBS signatures that contain errors" do
+      add_ruby_file("foo.rb", <<~RUBY)
+        # typed: true
+
+        class Foo
+          #: \o/
+          attr_reader :bar
+
+          #: foo
+          def foo; end
+
+          #: -> void
+          def qux; end
+        end
+      RUBY
+
+      output = template(<<~RBI)
+        class Foo
+          sig { returns(T.untyped) }
+          def bar; end
+
+          def foo; end
+
+          sig { void }
+          def qux; end
+        end
       RBI
 
       assert_equal(output, compile)

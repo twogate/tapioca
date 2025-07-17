@@ -7,8 +7,8 @@ module Tapioca
   class ExecutorSpec < Minitest::Spec
     describe "Tapioca::Executor" do
       before do
-        @queue = T.let((0...8).to_a, T::Array[Integer])
-        @executor = T.let(Executor.new(@queue), Executor)
+        @queue = (0...8).to_a #: Array[Integer]
+        @executor = Executor.new(@queue) #: Executor
       end
 
       it "runs sequentially when the number of workers is one" do
@@ -61,12 +61,7 @@ module Tapioca
         end
       end
 
-      sig do
-        params(expected_count: Integer).returns(T.proc.params(
-          _arg1: T.untyped,
-          _arg2: T.untyped,
-        ).returns(T::Array[Integer]))
-      end
+      #: (Integer expected_count) -> ^(untyped _arg1, untyped _arg2) -> Array[Integer]
       def assert_parallel_count(expected_count)
         ->(_, options) {
           assert_equal(expected_count, options[:in_processes])

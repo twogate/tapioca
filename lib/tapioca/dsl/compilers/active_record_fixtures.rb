@@ -33,12 +33,14 @@ module Tapioca
       #   def posts(fixture_name = nil, *other_fixtures); end
       # end
       # ~~~
+      #: [ConstantType = singleton(ActiveSupport::TestCase)]
       class ActiveRecordFixtures < Compiler
         extend T::Sig
 
-        ConstantType = type_member { { fixed: T.class_of(ActiveSupport::TestCase) } }
+        MISSING = Object.new
 
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           method_names = if fixture_loader.respond_to?(:fixture_sets)
             method_names_from_lazy_fixture_loader
@@ -46,6 +48,7 @@ module Tapioca
             method_names_from_eager_fixture_loader
           end
 
+          method_names.select! { |name| fixture_class_mapping_from_fixture_files[name] != MISSING }
           return if method_names.empty?
 
           root.create_path(constant) do |mod|
@@ -58,7 +61,8 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             return [] unless defined?(Rails.application) && Rails.application
 
@@ -68,49 +72,45 @@ module Tapioca
 
         private
 
-        sig { returns(T::Class[ActiveRecord::TestFixtures]) }
+        #: -> Class[ActiveRecord::TestFixtures]
         def fixture_loader
-          @fixture_loader ||= T.let(
-            Class.new do
-              T.unsafe(self).include(ActiveRecord::TestFixtures)
+          @fixture_loader ||= Class.new do
+            T.unsafe(self).include(ActiveRecord::TestFixtures)
 
-              if respond_to?(:fixture_paths=)
-                T.unsafe(self).fixture_paths = [Rails.root.join("test", "fixtures")]
-              else
-                T.unsafe(self).fixture_path = Rails.root.join("test", "fixtures")
-              end
+            if respond_to?(:fixture_paths=)
+              T.unsafe(self).fixture_paths = [Rails.root.join("test", "fixtures")]
+            else
+              T.unsafe(self).fixture_path = Rails.root.join("test", "fixtures")
+            end
 
-              # https://github.com/rails/rails/blob/7c70791470fc517deb7c640bead9f1b47efb5539/activerecord/lib/active_record/test_fixtures.rb#L46
-              singleton_class.define_method(:file_fixture_path) do
-                Rails.root.join("test", "fixtures", "files")
-              end
+            # https://github.com/rails/rails/blob/7c70791470fc517deb7c640bead9f1b47efb5539/activerecord/lib/active_record/test_fixtures.rb#L46
+            singleton_class.define_method(:file_fixture_path) do
+              Rails.root.join("test", "fixtures", "files")
+            end
 
-              T.unsafe(self).fixtures(:all)
-            end,
-            T.nilable(T::Class[ActiveRecord::TestFixtures]),
-          )
+            T.unsafe(self).fixtures(:all)
+          end #: Class[ActiveRecord::TestFixtures]?
         end
 
-        sig { returns(T::Array[String]) }
+        #: -> Array[String]
         def method_names_from_lazy_fixture_loader
           T.unsafe(fixture_loader).fixture_sets.keys
         end
 
-        sig { returns(T::Array[Symbol]) }
+        #: -> Array[String]
         def method_names_from_eager_fixture_loader
           fixture_loader.ancestors # get all ancestors from class that includes AR fixtures
             .drop(1) # drop the anonymous class itself from the array
             .reject(&:name) # only collect anonymous ancestors because fixture methods are always on an anonymous module
-            .map! do |mod|
-              [mod.private_instance_methods(false), mod.instance_methods(false)]
+            .flat_map do |mod|
+              mod.private_instance_methods(false).map(&:to_s) + mod.instance_methods(false).map(&:to_s)
             end
-            .flatten # merge methods into a single list
         end
 
-        sig { params(mod: RBI::Scope, name: String).void }
+        #: (RBI::Scope mod, String name) -> void
         def create_fixture_method(mod, name)
           return_type = return_type_for_fixture(name)
-          mod << RBI::Method.new(name) do |node|
+          mod.create_method(name) do |node|
             node.add_opt_param("fixture_name", "nil")
             node.add_rest_param("other_fixtures")
 
@@ -134,7 +134,7 @@ module Tapioca
           end
         end
 
-        sig { params(fixture_name: String).returns(String) }
+        #: (String fixture_name) -> String
         def return_type_for_fixture(fixture_name)
           fixture_class_mapping_from_fixture_files[fixture_name] ||
             fixture_class_from_fixture_set(fixture_name) ||
@@ -142,7 +142,7 @@ module Tapioca
             "T.untyped"
         end
 
-        sig { params(fixture_name: String).returns(T.nilable(String)) }
+        #: (String fixture_name) -> String?
         def fixture_class_from_fixture_set(fixture_name)
           # only rails 7.1+ support fixture sets so this is conditional
           return unless fixture_loader.respond_to?(:fixture_sets)
@@ -156,50 +156,47 @@ module Tapioca
           model_name
         end
 
-        sig { returns(T::Hash[String, String]) }
+        #: -> Hash[String, String]
         def fixture_class_from_active_record_base_class_mapping
-          @fixture_class_mapping ||= T.let(
-            begin
-              ActiveRecord::Base.descendants.each_with_object({}) do |model_class, mapping|
-                class_name = model_class.name
+          @fixture_class_mapping ||=
+            ActiveRecord::Base.descendants.each_with_object({}) do |model_class, mapping|
+              class_name = model_class.name
 
-                fixture_name = class_name.underscore.gsub("/", "_")
-                fixture_name = fixture_name.pluralize if ActiveRecord::Base.pluralize_table_names
+              fixture_name = class_name.underscore.gsub("/", "_")
+              fixture_name = fixture_name.pluralize if ActiveRecord::Base.pluralize_table_names
 
-                mapping[fixture_name] = class_name
+              mapping[fixture_name] = class_name
 
-                mapping
-              end
-            end,
-            T.nilable(T::Hash[String, String]),
-          )
+              mapping
+            end #: Hash[String, String]?
         end
 
-        sig { returns(T::Hash[String, String]) }
+        #: -> Hash[String, String]
         def fixture_class_mapping_from_fixture_files
-          @fixture_file_class_mapping ||= T.let(
-            begin
-              fixture_paths = if T.unsafe(fixture_loader).respond_to?(:fixture_paths)
-                T.unsafe(fixture_loader).fixture_paths
-              else
-                T.unsafe(fixture_loader).fixture_path
-              end
+          @fixture_file_class_mapping ||= begin
+            fixture_paths = if T.unsafe(fixture_loader).respond_to?(:fixture_paths)
+              T.unsafe(fixture_loader).fixture_paths
+            else
+              T.unsafe(fixture_loader).fixture_path
+            end
 
-              Array(fixture_paths).each_with_object({}) do |path, mapping|
-                Dir["#{path}{.yml,/{**,*}/*.yml}"].select do |file|
-                  next unless ::File.file?(file)
+            Array(fixture_paths).each_with_object({}) do |path, mapping|
+              Dir["#{path}{.yml,/{**,*}/*.yml}"].select do |file|
+                next unless ::File.file?(file)
 
-                  ActiveRecord::FixtureSet::File.open(file) do |fh|
-                    next unless fh.model_class
+                ActiveRecord::FixtureSet::File.open(file) do |fh|
+                  fixture_name = file.delete_prefix(path.to_s).delete_prefix("/").delete_suffix(".yml")
+                  next unless fh.model_class
 
-                    fixture_name = file.delete_prefix(path.to_s).delete_prefix("/").delete_suffix(".yml")
-                    mapping[fixture_name] = fh.model_class
-                  end
+                  mapping[fixture_name] = fh.model_class
+                rescue ActiveRecord::Fixture::FormatError
+                  # For fixtures that are not associated to any models and just contain raw data or fixtures that
+                  # contain invalid formatting, we want to skip them and avoid crashing
+                  mapping[fixture_name] = MISSING
                 end
               end
-            end,
-            T.nilable(T::Hash[String, String]),
-          )
+            end
+          end #: Hash[String, String]?
         end
       end
     end

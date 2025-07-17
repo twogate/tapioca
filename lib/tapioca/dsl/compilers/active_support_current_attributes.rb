@@ -59,12 +59,12 @@ module Tapioca
       #   end
       # end
       # ~~~
+      #: [ConstantType = singleton(::ActiveSupport::CurrentAttributes)]
       class ActiveSupportCurrentAttributes < Compiler
         extend T::Sig
 
-        ConstantType = type_member { { fixed: T.class_of(::ActiveSupport::CurrentAttributes) } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           dynamic_methods = dynamic_methods_of_constant
           instance_methods = instance_methods_of_constant - dynamic_methods
@@ -96,7 +96,8 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             descendants_of(::ActiveSupport::CurrentAttributes)
           end
@@ -104,17 +105,17 @@ module Tapioca
 
         private
 
-        sig { returns(T::Array[Symbol]) }
+        #: -> Array[Symbol]
         def dynamic_methods_of_constant
           constant.instance_variable_get(:@generated_attribute_methods)&.instance_methods(false) || []
         end
 
-        sig { returns(T::Array[Symbol]) }
+        #: -> Array[Symbol]
         def instance_methods_of_constant
           constant.instance_methods(false)
         end
 
-        sig { params(klass: RBI::Scope, method: String, class_method: T::Boolean).void }
+        #: (RBI::Scope klass, String method, class_method: bool) -> void
         def generate_method(klass, method, class_method:)
           method_def = if class_method
             constant.method(method)

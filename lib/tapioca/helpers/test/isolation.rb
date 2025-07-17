@@ -1,4 +1,4 @@
-# typed: true
+# typed: strict
 # frozen_string_literal: true
 
 module Tapioca
@@ -13,12 +13,13 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { returns(T::Boolean) }
+          #: -> bool
           def forking_env?
             !ENV["NO_FORK"] && Process.respond_to?(:fork)
           end
         end
 
+        #: -> Object
         def run
           serialized = T.unsafe(self).run_in_isolation do
             super
@@ -27,13 +28,10 @@ module Tapioca
           Marshal.load(serialized)
         end
 
+        # @requires_ancestor: Kernel
         module Forking
           extend T::Sig
-          extend T::Helpers
-
-          requires_ancestor { Kernel }
-
-          sig { params(_blk: T.untyped).returns(String) }
+          #: ?{ (?) -> untyped } -> String
           def run_in_isolation(&_blk)
             read, write = IO.pipe
             read.binmode
@@ -67,22 +65,20 @@ module Tapioca
             result = read.read
             read.close
 
-            Process.wait2(T.must(pid))
-            T.must(result).unpack1("m")
+            Process.wait2(pid)
+            result.unpack1("m")
           end
         end
 
+        # @requires_ancestor: Kernel
         module Subprocess
           extend T::Sig
-          extend T::Helpers
 
-          requires_ancestor { Kernel }
-
-          ORIG_ARGV = T.let(ARGV.dup, T::Array[T.untyped]) unless defined?(ORIG_ARGV)
+          ORIG_ARGV = ARGV.dup #: Array[String]
 
           # Crazy H4X to get this working in windows / jruby with
           # no forking.
-          sig { params(_blk: T.untyped).returns(String) }
+          #: ?{ (?) -> untyped } -> String
           def run_in_isolation(&_blk)
             this = T.cast(self, Minitest::Test)
             require "tempfile"

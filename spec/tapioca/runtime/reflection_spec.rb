@@ -8,6 +8,8 @@ module Tapioca
     class LyingFoo < BasicObject
       include ::Kernel
 
+      class AttachedClass; end
+
       class << self
         def constants
           [::Symbol, ::String]
@@ -50,12 +52,35 @@ module Tapioca
         ::String
       end
 
-      def __id__
+      def __id__ # rubocop:disable Naming/MethodName
         1
       end
 
       def equal?(other)
         other == 1
+      end
+    end
+
+    class SignatureFoo
+      extend T::Sig
+
+      #: -> String
+      def good_method
+        "Thank you."
+      end
+
+      # NOTE: leveraging eval to avoid actual sorbet typechecking
+      eval <<~RUBY
+        sig do
+          raise ArgumentError
+        end
+        def bad_method
+          "oh no..."
+        end
+      RUBY
+
+      def unknown_method
+        ' ¯\_(ツ)_/¯ '
       end
     end
 
@@ -83,7 +108,7 @@ module Tapioca
         it "return the correct results with Reflection helpers" do
           foo = LyingFoo.new
 
-          assert_equal([], Runtime::Reflection.constants_of(LyingFoo))
+          assert_equal([:AttachedClass], Runtime::Reflection.constants_of(LyingFoo))
           assert_equal("Tapioca::Runtime::LyingFoo", Runtime::Reflection.name_of(LyingFoo))
           assert_equal([Tapioca::Runtime::LyingFoo, Kernel, BasicObject], Runtime::Reflection.ancestors_of(LyingFoo))
           assert_equal(BasicObject, Runtime::Reflection.superclass_of(LyingFoo))
@@ -110,6 +135,53 @@ module Tapioca
 
         it "returns top level anchored name for named class" do
           assert_equal("::Tapioca::Runtime::LyingFoo", Runtime::Reflection.qualified_name_of(LyingFoo))
+        end
+
+        it "returns the right name for attached classes" do
+          assert_equal(
+            "::Tapioca::Runtime::LyingFoo::AttachedClass",
+            Runtime::Reflection.name_of_type(T::Types::Simple.new(LyingFoo::AttachedClass)),
+          )
+          assert_equal(
+            "T.attached_class",
+            Runtime::Reflection.name_of_type(T::Types::AttachedClassType.new),
+          )
+        end
+
+        describe "signature_for" do
+          it "returns a valid signature" do
+            method = SignatureFoo.instance_method(:good_method)
+            refute_nil(Runtime::Reflection.signature_of(method))
+          end
+
+          it "returns nil when a signature is not defined" do
+            method = SignatureFoo.instance_method(:unknown_method)
+            assert_nil(Runtime::Reflection.signature_of(method))
+          end
+
+          it "returns nil when a signature block raises an exception" do
+            method = SignatureFoo.instance_method(:bad_method)
+            assert_nil(Runtime::Reflection.signature_of(method))
+          end
+        end
+
+        describe "signature_for!" do
+          it "returns a valid signature" do
+            method = SignatureFoo.instance_method(:good_method)
+            refute_nil(Runtime::Reflection.signature_of!(method))
+          end
+
+          it "returns nil when a signature is not defined" do
+            method = SignatureFoo.instance_method(:unknown_method)
+            assert_nil(Runtime::Reflection.signature_of!(method))
+          end
+
+          it "returns nil when a signature block raises an exception" do
+            method = SignatureFoo.instance_method(:bad_method)
+            assert_raises(Tapioca::Runtime::Reflection::SignatureBlockError) do
+              Runtime::Reflection.signature_of!(method)
+            end
+          end
         end
       end
     end

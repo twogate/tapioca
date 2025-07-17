@@ -9,20 +9,20 @@ module Tapioca
         include SorbetHelper
         include Runtime::Reflection
 
-        sig { returns(T::Set[String]) }
+        #: -> Set[String]
         def payload_symbols
           unless @payload_symbols
             output = symbol_table_json_from("-e ''", table_type: "symbol-table-full-json")
-            @payload_symbols = T.let(SymbolTableParser.parse_json(output), T.nilable(T::Set[String]))
+            @payload_symbols = SymbolTableParser.parse_json(output) #: Set[String]?
           end
 
           T.must(@payload_symbols)
         end
 
-        sig { params(gem: Gemfile::GemSpec).returns(T::Set[String]) }
+        #: (Gemfile::GemSpec gem) -> Set[String]
         def engine_symbols(gem)
           gem_engine = engines.find do |engine|
-            gem.contains_path?(engine.config.root.to_s)
+            gem.full_gem_path == engine.config.root.to_s
           end
 
           return Set.new unless gem_engine
@@ -44,13 +44,15 @@ module Tapioca
           Set.new
         end
 
-        sig { params(gem: Gemfile::GemSpec).returns(T::Set[String]) }
+        #: (Gemfile::GemSpec gem) -> Set[String]
         def gem_symbols(gem)
           symbols_from_paths(gem.files)
         end
 
-        sig { params(paths: T::Array[Pathname]).returns(T::Set[String]) }
+        #: (Array[Pathname] paths) -> Set[String]
         def symbols_from_paths(paths)
+          return Set.new if paths.empty?
+
           output = Tempfile.create("sorbet") do |file|
             file.write(Array(paths).join("\n"))
             file.flush
@@ -65,20 +67,18 @@ module Tapioca
 
         private
 
-        sig { returns(T::Array[T.class_of(Rails::Engine)]) }
+        # @without_runtime
+        #: -> Array[singleton(Rails::Engine)]
         def engines
-          @engines ||= T.let(
-            if Object.const_defined?("Rails::Engine")
-              descendants_of(Object.const_get("Rails::Engine"))
-                .reject(&:abstract_railtie?)
-            else
-              []
-            end,
-            T.nilable(T::Array[T.class_of(Rails::Engine)]),
-          )
+          @engines ||= if Object.const_defined?("Rails::Engine")
+            descendants_of(Object.const_get("Rails::Engine"))
+              .reject(&:abstract_railtie?)
+          else
+            []
+          end #: Array[singleton(Rails::Engine)]?
         end
 
-        sig { params(input: String, table_type: String).returns(String) }
+        #: (String input, ?table_type: String) -> String
         def symbol_table_json_from(input, table_type: "symbol-table-json")
           sorbet("--no-config", "--quiet", "--print=#{table_type}", input).out
         end

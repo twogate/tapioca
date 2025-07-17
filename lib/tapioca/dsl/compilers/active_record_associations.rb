@@ -101,6 +101,7 @@ module Tapioca
       #   end
       # end
       # ~~~
+      #: [ConstantType = singleton(ActiveRecord::Base)]
       class ActiveRecordAssociations < Compiler
         extend T::Sig
         include Helpers::ActiveRecordConstantsHelper
@@ -111,19 +112,18 @@ module Tapioca
         class MissingConstantError < StandardError
           extend T::Sig
 
-          sig { returns(String) }
+          #: String
           attr_reader :class_name
 
-          sig { params(class_name: String).void }
+          #: (String class_name) -> void
           def initialize(class_name)
             @class_name = class_name
             super
           end
         end
 
-        ConstantType = type_member { { fixed: T.class_of(ActiveRecord::Base) } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           return if constant.reflections.empty?
 
@@ -140,7 +140,8 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             descendants_of(::ActiveRecord::Base).reject(&:abstract_class?)
           end
@@ -148,7 +149,7 @@ module Tapioca
 
         private
 
-        sig { params(mod: RBI::Scope).void }
+        #: (RBI::Scope mod) -> void
         def populate_nested_attribute_writers(mod)
           constant.nested_attributes_options.keys.each do |association_name|
             mod.create_method(
@@ -159,7 +160,7 @@ module Tapioca
           end
         end
 
-        sig { params(mod: RBI::Scope).void }
+        #: (RBI::Scope mod) -> void
         def populate_associations(mod)
           constant.reflections.each do |association_name, reflection|
             if reflection.collection?
@@ -178,16 +179,11 @@ module Tapioca
           end
         end
 
-        sig do
-          params(
-            klass: RBI::Scope,
-            association_name: T.any(String, Symbol),
-            reflection: ReflectionType,
-          ).void
-        end
+        #: (RBI::Scope klass, (String | Symbol) association_name, ReflectionType reflection) -> void
         def populate_single_assoc_getter_setter(klass, association_name, reflection)
           association_class = type_for(reflection)
           association_type = as_nilable_type(association_class)
+          association_methods_module = constant.generated_association_methods
 
           klass.create_method(
             association_name.to_s,
@@ -206,6 +202,18 @@ module Tapioca
             "reset_#{association_name}",
             return_type: "void",
           )
+          if association_methods_module.method_defined?("#{association_name}_changed?")
+            klass.create_method(
+              "#{association_name}_changed?",
+              return_type: "T::Boolean",
+            )
+          end
+          if association_methods_module.method_defined?("#{association_name}_previously_changed?")
+            klass.create_method(
+              "#{association_name}_previously_changed?",
+              return_type: "T::Boolean",
+            )
+          end
           unless reflection.polymorphic?
             klass.create_method(
               "build_#{association_name}",
@@ -234,13 +242,7 @@ module Tapioca
           end
         end
 
-        sig do
-          params(
-            klass: RBI::Scope,
-            association_name: T.any(String, Symbol),
-            reflection: ReflectionType,
-          ).void
-        end
+        #: (RBI::Scope klass, (String | Symbol) association_name, ReflectionType reflection) -> void
         def populate_collection_assoc_getter_setter(klass, association_name, reflection)
           association_class = type_for(reflection)
           relation_class = relation_type_for(reflection)
@@ -266,11 +268,7 @@ module Tapioca
           )
         end
 
-        sig do
-          params(
-            reflection: ReflectionType,
-          ).returns(String)
-        end
+        #: (ReflectionType reflection) -> String
         def type_for(reflection)
           validate_reflection!(reflection)
 
@@ -279,11 +277,7 @@ module Tapioca
           T.must(qualified_name_of(reflection.klass))
         end
 
-        sig do
-          params(
-            reflection: ReflectionType,
-          ).void
-        end
+        #: (ReflectionType reflection) -> void
         def validate_reflection!(reflection)
           # Check existence of source reflection, first, since, calling
           # `.klass` also tries to go through the source reflection
@@ -307,7 +301,7 @@ module Tapioca
           raise MissingConstantError, class_name
         end
 
-        sig { params(reflection: ReflectionType).returns(T.nilable(String)) }
+        #: (ReflectionType reflection) -> String?
         def declaration(reflection)
           case reflection
           when ActiveRecord::Reflection::HasOneReflection
@@ -327,7 +321,7 @@ module Tapioca
           end
         end
 
-        sig { params(reflection: ReflectionType).returns(T::Array[RBI::Comment]) }
+        #: (ReflectionType reflection) -> Array[RBI::Comment]
         def association_comments(reflection)
           anchor_name = case reflection
           when ActiveRecord::Reflection::HasOneReflection
@@ -361,11 +355,7 @@ module Tapioca
           end
         end
 
-        sig do
-          params(
-            reflection: ReflectionType,
-          ).returns(String)
-        end
+        #: (ReflectionType reflection) -> String
         def relation_type_for(reflection)
           validate_reflection!(reflection)
 
@@ -385,11 +375,7 @@ module Tapioca
           end
         end
 
-        sig do
-          params(
-            reflection: ReflectionType,
-          ).returns(T::Boolean)
-        end
+        #: (ReflectionType reflection) -> bool
         def polymorphic_association?(reflection)
           if reflection.through_reflection?
             polymorphic_association?(reflection.source_reflection)

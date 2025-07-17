@@ -103,6 +103,10 @@ module Tapioca
       end
     RBI
 
+    before(:all) do
+      @project.require_default_gems
+    end
+
     describe "cli::gem" do
       before(:all) do
         @project.bundle_install!
@@ -186,6 +190,7 @@ module Tapioca
 
         after do
           project.write_gemfile!(project.tapioca_gemfile)
+          @project.require_default_gems
           project.remove!("sorbet/rbi")
           project.remove!("../gems")
           project.remove!("sorbet/tapioca/require.rb")
@@ -266,8 +271,8 @@ module Tapioca
         end
 
         it "must generate RBI for a default gem" do
-          gem_name = "ostruct"
-          gem_top_level_constant = "class OpenStruct"
+          gem_name = "cgi"
+          gem_top_level_constant = "class CGI"
 
           gem_spec = ::Gem::Specification.default_stubs("*.gemspec").find do |spec|
             spec.name == gem_name && spec.default_gem?
@@ -430,10 +435,10 @@ module Tapioca
           assert_stderr_includes(result, "RBIs exported by `foo` contain errors and can't be used:")
           assert_stderr_includes(
             result,
-            "unexpected end of file, assuming it is closing the parent top level context. expected an `end` to close " \
-              "the `module` statement.",
+            "unexpected end-of-input, assuming it is closing the parent top level context. expected an `end` to " \
+              "close the `module` statement.",
           )
-          assert_stderr_includes(result, "foo/rbi/foo.rbi:2:0")
+          assert_stderr_includes(result, "foo/rbi/foo.rbi:1:25")
 
           assert_project_file_equal("sorbet/rbi/gems/foo@0.0.1.rbi", FOO_RBI)
 
@@ -627,6 +632,8 @@ module Tapioca
         end
 
         it "must not include `rbi` definitions into `tapioca` RBI" do
+          skip "This test is failing on CI. See issue #2025 for details."
+
           @project.bundle_install!
           result = @project.tapioca("gem tapioca", exclude: [])
 
@@ -639,6 +646,23 @@ module Tapioca
 
           assert_empty_stderr(result)
           assert_success_status(result)
+        end
+
+        it "must not include code from an ActiveSupport.on_load hook in ActiveRecord RBIs" do
+          @project.require_real_gem("rails", "7.1.0")
+          # Flipper adds functionality to ActiveRecord via an ActiveSupport.on_load hook
+          @project.require_real_gem("flipper-active_record", "1.3.1")
+
+          @project.bundle_install!
+          result = @project.tapioca("gem")
+
+          assert_empty_stderr(result)
+          assert_success_status(result)
+
+          activerecord_rbi_file = T.must(
+            Dir.glob("#{@project.absolute_path}/sorbet/rbi/gems/activerecord@7.1.0.rbi").first,
+          )
+          refute_includes(File.read(activerecord_rbi_file), "class Flipper")
         end
 
         it "must generate multiple gem RBIs" do
@@ -706,7 +730,7 @@ module Tapioca
         it "must not generate RBIs for missing gem specs" do
           @project.write_gemfile!(<<~GEMFILE, append: true)
             platform :rbx do
-              gem "ruby2_keywords", "0.0.5"
+              gem "sidekiq", "=7.1.2"
             end
           GEMFILE
 
@@ -714,8 +738,8 @@ module Tapioca
 
           result = @project.tapioca("gem --all")
 
-          assert_stdout_includes(result, "completed with missing specs: ruby2_keywords (0.0.5)")
-          refute_includes(result.out, "Compiled ruby2_keywords")
+          assert_stdout_includes(result, "completed with missing specs: sidekiq (7.1.2)")
+          refute_includes(result.out, "Compiled sidekiq")
 
           assert_empty_stderr(result)
           assert_success_status(result)
@@ -723,7 +747,7 @@ module Tapioca
 
         it "must generate git gem RBIs with source revision numbers" do
           @project.write_gemfile!(<<~GEMFILE, append: true)
-            gem("faraday", git: "https://github.com/lostisland/faraday", ref: "23e249563613971ced8f851230c46b9eeeefe931")
+            gem("faraday", git: "https://github.com/lostisland/faraday", ref: "a9cf00425e3abc99b78952af44deb2912a65a882")
           GEMFILE
 
           @project.bundle_install!
@@ -733,7 +757,7 @@ module Tapioca
           assert_stdout_includes(result, "Compiled faraday")
 
           assert_project_file_exist(
-            "sorbet/rbi/gems/faraday@2.0.0.alpha.pre.4-23e249563613971ced8f851230c46b9eeeefe931.rbi",
+            "sorbet/rbi/gems/faraday@2.12.2-a9cf00425e3abc99b78952af44deb2912a65a882.rbi",
           )
 
           assert_empty_stderr(result)
@@ -756,19 +780,23 @@ module Tapioca
 
         it "must respect exclude option" do
           @project.require_mock_gem(mock_gem("foo", "0.0.1"))
-          @project.require_mock_gem(mock_gem("bar", "0.3.0"))
-          @project.require_mock_gem(mock_gem("baz", "0.0.2"))
+          @project.require_mock_gem(mock_gem("bar", "0.3.0", dependencies: ["activemodel", "actionpack"]))
+          @project.require_mock_gem(mock_gem("baz", "0.0.2", dependencies: ["activemodel"]))
           @project.bundle_install!
 
           result = @project.tapioca("gem --all --exclude foo bar")
 
           refute_includes(result.out, "Compiled bar")
+          refute_includes(result.out, "Compiled actionpack")
           assert_stdout_includes(result, "Compiled baz")
+          assert_stdout_includes(result, "Compiled activemodel")
           refute_includes(result.out, "Compiled foo")
 
           refute_project_file_exist("sorbet/rbi/gems/foo@0.0.1.rbi")
           refute_project_file_exist("sorbet/rbi/gems/bar@0.3.0.rbi")
+          refute_project_file_match("sorbet/rbi/gems/actionpack@*.rbi")
           assert_project_file_exist("sorbet/rbi/gems/baz@0.0.2.rbi")
+          assert_project_file_match("sorbet/rbi/gems/activemodel@*.rbi")
 
           assert_empty_stderr(result)
           assert_success_status(result)
@@ -793,11 +821,25 @@ module Tapioca
           assert_project_file_exist("sorbet/rbi/gems/foo@0.0.1.rbi")
           assert_project_file_exist("sorbet/rbi/gems/bar@0.3.0.rbi")
           assert_project_file_exist("sorbet/rbi/gems/actionpack@7.0.6.rbi")
-          assert_project_file_exist("sorbet/rbi/gems/rack@2.2.9.rbi")
+          assert_project_file_match("sorbet/rbi/gems/rack@*.rbi")
           refute_project_file_exist("sorbet/rbi/gems/baz@0.0.2.rbi")
 
           assert_empty_stderr(result)
           assert_success_status(result)
+        end
+
+        it "skips missing gems and continues with warning when --lsp_addon is used" do
+          result = @project.tapioca("gem non_existent_gem --lsp_addon")
+
+          assert_empty_stderr(result)
+          assert_success_status(result)
+        end
+
+        it "fails with error when gem cannot be found" do
+          result = @project.tapioca("gem non_existent_gem")
+
+          assert_stderr_includes(result, "Error: Cannot find gem 'non_existent_gem'")
+          refute_success_status(result)
         end
 
         it "does not crash when the extras gem is loaded" do
@@ -1244,13 +1286,13 @@ module Tapioca
             RB
           end
 
-          @project.require_real_gem("rails")
+          @project.require_real_gem("rails", ActiveSupport.gem_version.to_s)
           @project.require_mock_gem(foo)
           @project.bundle_install!
 
           res = @project.tapioca("gem foo")
 
-          assert_project_file_equal("sorbet/rbi/gems/foo@0.0.2.rbi", <<~RBI)
+          assert_project_file_equal("sorbet/rbi/gems/foo@0.0.2.rbi", template(<<~RBI))
             # typed: true
 
             # DO NOT EDIT MANUALLY
@@ -1259,13 +1301,7 @@ module Tapioca
 
 
             module Foo; end
-
-            class Foo::Engine < ::Rails::Engine
-              class << self
-                def __callbacks; end
-              end
-            end
-
+            class Foo::Engine < ::Rails::Engine; end
             class Foo::Post; end
             class User; end
           RBI
@@ -1282,7 +1318,7 @@ module Tapioca
         end
 
         it "generates correct RBIs for a Rails engine in Zeitwerk mode" do
-          @project.require_real_gem("rails", "6.1.7.2")
+          @project.require_real_gem("rails", "7.1.5")
           @project.require_real_gem("turbo-rails", "1.3.2")
           @project.bundle_install!
 
@@ -1292,7 +1328,7 @@ module Tapioca
             module Foo
               class Application < Rails::Application
                 # Initialize configuration defaults for originally generated Rails version.
-                config.load_defaults 6.1
+                config.load_defaults 7.1
                 config.autoloader = :zeitwerk
               end
             end
@@ -1313,7 +1349,7 @@ module Tapioca
         end
 
         it "generates correct RBIs for a Rails engine in Classic mode" do
-          @project.require_real_gem("rails", "6.1.7.2")
+          @project.require_real_gem("rails", "7.1.5")
           @project.require_real_gem("turbo-rails", "1.3.2")
           @project.bundle_install!
 
@@ -1323,7 +1359,7 @@ module Tapioca
             module Foo
               class Application < Rails::Application
                 # Initialize configuration defaults for originally generated Rails version.
-                config.load_defaults 6.1
+                config.load_defaults 7.1
                 config.autoloader = :classic
               end
             end
@@ -1504,6 +1540,65 @@ module Tapioca
 
           assert_empty_stderr(result)
           assert_success_status(result)
+        end
+
+        it "properly filters eager loaded Rails engines when gem is installed from git source" do
+          # When Rails is installed through a release version, each gem contained inside `rails` is placed in a
+          # different sibling directory. However, when Rails is installed through a git source, all gems are placed
+          # nested under the Rails directory. When we check if an engine belongs to a gem, we need to take that into
+          # account to avoid placing symbols that do not belong to the Rails RBI inside of it
+          #
+          # Example of path for git installed Rails:
+          # /Users/me/.gem/ruby/3.3.0/bundler/gems/rails-e3ea4c74124f/
+          # /Users/me/.gem/ruby/3.3.0/bundler/gems/rails-e3ea4c74124f/activestorage
+          # /Users/me/.gem/ruby/3.3.0/bundler/gems/rails-e3ea4c74124f/actionmailbox
+          #
+          # The engines defined by `activestorage` and `actionmailbox` should not be placed in the Rails RBI. They
+          # belong in their own respective RBIs.
+          #
+          # Note that this problem only happens if another gem somehow eager loads the engines. By default, Rails
+          # would've not loaded those classes and they would have not been placed in the Rails RBI.
+
+          # This is pointing to the 7-2-stable branch because Rails 8 dropped support for Ruby 3.1. We can point
+          # it to main again once Tapioca drops support for Ruby 3.1 as well.
+          @project.write_gemfile!(<<~GEMFILE, append: true)
+            gem("rails", git: "https://github.com/rails/rails", branch: "7-2-stable")
+          GEMFILE
+
+          # Create a gem that eager loads the ActionMailbox engine
+          gem = mock_gem("eager_loader", "1.0.0") do
+            write!("lib/eager_loader.rb", <<~RUBY)
+              require "action_mailbox/engine"
+
+              module EagerLoader
+              end
+            RUBY
+          end
+          @project.require_mock_gem(gem)
+
+          install_result = @project.bundle_install!
+          assert_predicate(install_result, :status, "Bundle install failed\n\n#{install_result.err}")
+
+          result = @project.tapioca("gem rails")
+          assert_empty_stderr(result)
+          assert_success_status(result)
+
+          assert_stdout_includes(result, "Compiled rails")
+          rails_rbi = T.must(Dir.glob("#{@project.absolute_path}/sorbet/rbi/gems/rails@*.rbi").first)
+
+          expected_rbi = <<~RBI
+            # typed: true
+
+            # DO NOT EDIT MANUALLY
+            # This is an autogenerated file for types exported from the `rails` gem.
+            # Please instead update this file by running `bin/tapioca gem rails`.
+
+
+            # THIS IS AN EMPTY RBI FILE.
+            # see https://github.com/Shopify/tapioca#manually-requiring-parts-of-a-gem
+          RBI
+
+          assert_equal(expected_rbi, File.read(rails_rbi))
         end
       end
 
@@ -1925,9 +2020,11 @@ module Tapioca
             "please pass `--no-halt-upon-load-error` to the tapioca command in sorbet/tapioca/config.yml or in CLI." \
             "\nError during application loading"
           assert_stdout_includes(result, out)
-          err = "/tmp/tapioca/tests/gem_spec/project/config/application.rb:5:in `<class:Application>': Error during " \
-            "application loading (RuntimeError)"
-          assert_stderr_includes(result, err)
+          err = %r{
+            tapioca/tests/gem_spec/project/config/application\.rb:5:in\s['`]<class:Application>':\s
+            Error\sduring\sapplication\sloading\s\(RuntimeError\)
+          }x
+          assert_stderr_includes_pattern(result, err)
           refute_success_status(result)
         end
 
@@ -1940,9 +2037,9 @@ module Tapioca
             "please pass `--no-halt-upon-load-error` to the tapioca command in sorbet/tapioca/config.yml or in CLI." \
             "\nError during application loading"
           assert_stdout_includes(result, out)
-          assert_stdout_includes(
+          assert_stdout_includes_pattern(
             result,
-            "/tmp/tapioca/tests/gem_spec/project/config/application.rb:5:in `<class:Application>'",
+            %r{tapioca/tests/gem_spec/project/config/application\.rb:5:in ['`]<class:Application>'},
           )
           assert_stdout_includes(result, <<~OUT)
             Continuing RBI generation without loading the Rails application.

@@ -6,35 +6,25 @@ module Tapioca
     class Pipeline
       extend T::Sig
 
-      sig { returns(T::Enumerable[T.class_of(Compiler)]) }
+      #: T::Enumerable[singleton(Compiler)]
       attr_reader :active_compilers
 
-      sig { returns(T::Array[Module]) }
+      #: Array[Module]
       attr_reader :requested_constants
 
-      sig { returns(T::Array[Pathname]) }
+      #: Array[Pathname]
       attr_reader :requested_paths
 
-      sig { returns(T::Array[Module]) }
+      #: Array[Module]
       attr_reader :skipped_constants
 
-      sig { returns(T.proc.params(error: String).void) }
+      #: ^(String error) -> void
       attr_reader :error_handler
 
-      sig { returns(T::Array[String]) }
+      #: Array[String]
       attr_reader :errors
 
-      sig do
-        params(
-          requested_constants: T::Array[Module],
-          requested_paths: T::Array[Pathname],
-          requested_compilers: T::Array[T.class_of(Compiler)],
-          excluded_compilers: T::Array[T.class_of(Compiler)],
-          error_handler: T.proc.params(error: String).void,
-          skipped_constants: T::Array[Module],
-          number_of_workers: T.nilable(Integer),
-        ).void
-      end
+      #: (requested_constants: Array[Module], ?requested_paths: Array[Pathname], ?requested_compilers: Array[singleton(Compiler)], ?excluded_compilers: Array[singleton(Compiler)], ?error_handler: ^(String error) -> void, ?skipped_constants: Array[Module], ?number_of_workers: Integer?, ?compiler_options: Hash[String, untyped], ?lsp_addon: bool) -> void
       def initialize(
         requested_constants:,
         requested_paths: [],
@@ -42,25 +32,23 @@ module Tapioca
         excluded_compilers: [],
         error_handler: $stderr.method(:puts).to_proc,
         skipped_constants: [],
-        number_of_workers: nil
+        number_of_workers: nil,
+        compiler_options: {},
+        lsp_addon: false
       )
-        @active_compilers = T.let(
-          gather_active_compilers(requested_compilers, excluded_compilers),
-          T::Enumerable[T.class_of(Compiler)],
-        )
+        @active_compilers =
+          gather_active_compilers(requested_compilers, excluded_compilers) #: Enumerable[singleton(Compiler)]
         @requested_constants = requested_constants
         @requested_paths = requested_paths
         @error_handler = error_handler
         @skipped_constants = skipped_constants
         @number_of_workers = number_of_workers
-        @errors = T.let([], T::Array[String])
+        @compiler_options = compiler_options
+        @lsp_addon = lsp_addon
+        @errors = [] #: Array[String]
       end
 
-      sig do
-        type_parameters(:T).params(
-          blk: T.proc.params(constant: Module, rbi: RBI::File).returns(T.type_parameter(:T)),
-        ).returns(T::Array[T.type_parameter(:T)])
-      end
+      #: [T] { (Module constant, RBI::File rbi) -> T } -> Array[T]
       def run(&blk)
         constants_to_process = gather_constants(requested_constants, requested_paths, skipped_constants)
           .select { |c| Module === c } # Filter value constants out
@@ -72,6 +60,7 @@ module Tapioca
             No classes/modules can be matched for RBI generation.
             Please check that the requested classes/modules include processable DSL methods.
           ERROR
+          raise Tapioca::Error, ""
         end
 
         if defined?(::ActiveRecord::Base) && constants_to_process.any? { |c| ::ActiveRecord::Base > c }
@@ -88,19 +77,23 @@ module Tapioca
           blk.call(constant, rbi)
         end
 
-        errors.each do |msg|
-          report_error(msg)
+        if errors.any?
+          errors.each do |msg|
+            report_error(msg)
+          end
+
+          raise Tapioca::Error, ""
         end
 
         result.compact
       end
 
-      sig { params(error: String).void }
+      #: (String error) -> void
       def add_error(error)
         @errors << error
       end
 
-      sig { params(compiler_name: String).returns(T::Boolean) }
+      #: (String compiler_name) -> bool
       def compiler_enabled?(compiler_name)
         potential_names = Compilers::NAMESPACES.map { |namespace| namespace + compiler_name }
 
@@ -109,24 +102,16 @@ module Tapioca
         end
       end
 
-      sig { returns(T::Array[T.class_of(Compiler)]) }
+      #: -> Array[singleton(Compiler)]
       def compilers
-        @compilers ||= T.let(
-          Runtime::Reflection.descendants_of(Compiler).sort_by do |compiler|
-            T.must(compiler.name)
-          end,
-          T.nilable(T::Array[T.class_of(Compiler)]),
-        )
+        @compilers ||= Runtime::Reflection.descendants_of(Compiler).sort_by do |compiler|
+          T.must(compiler.name)
+        end #: Array[singleton(Compiler)]?
       end
 
       private
 
-      sig do
-        params(
-          requested_compilers: T::Array[T.class_of(Compiler)],
-          excluded_compilers: T::Array[T.class_of(Compiler)],
-        ).returns(T::Enumerable[T.class_of(Compiler)])
-      end
+      #: (Array[singleton(Compiler)] requested_compilers, Array[singleton(Compiler)] excluded_compilers) -> T::Enumerable[singleton(Compiler)]
       def gather_active_compilers(requested_compilers, excluded_compilers)
         active_compilers = compilers
         active_compilers -= excluded_compilers
@@ -134,14 +119,9 @@ module Tapioca
         active_compilers
       end
 
-      sig do
-        params(
-          requested_constants: T::Array[Module],
-          requested_paths: T::Array[Pathname],
-          skipped_constants: T::Array[Module],
-        ).returns(T::Set[Module])
-      end
+      #: (Array[Module] requested_constants, Array[Pathname] requested_paths, Array[Module] skipped_constants) -> Set[Module]
       def gather_constants(requested_constants, requested_paths, skipped_constants)
+        Compiler.requested_constants = requested_constants
         constants = Set.new.compare_by_identity
         active_compilers.each do |compiler|
           constants.merge(compiler.processable_constants)
@@ -161,7 +141,7 @@ module Tapioca
         constants
       end
 
-      sig { params(constants: T::Set[Module]).returns(T::Set[Module]) }
+      #: (Set[Module] constants) -> Set[Module]
       def filter_anonymous_and_reloaded_constants(constants)
         # Group constants by their names
         constants_by_name = constants
@@ -173,7 +153,7 @@ module Tapioca
         # Find the constants that have been reloaded
         reloaded_constants = constants_by_name.select { |_, constants| constants.size > 1 }.keys
 
-        unless reloaded_constants.empty?
+        unless reloaded_constants.empty? || @lsp_addon
           reloaded_constant_names = reloaded_constants.map { |name| "`#{name}`" }.join(", ")
 
           $stderr.puts("WARNING: Multiple constants with the same name: #{reloaded_constant_names}")
@@ -190,14 +170,14 @@ module Tapioca
         Set.new.compare_by_identity.merge(filtered_constants)
       end
 
-      sig { params(constant: Module).returns(T.nilable(RBI::File)) }
+      #: (Module constant) -> RBI::File?
       def rbi_for_constant(constant)
         file = RBI::File.new(strictness: "true")
 
         active_compilers.each do |compiler_class|
           next unless compiler_class.handles?(constant)
 
-          compiler = compiler_class.new(self, file.root, constant)
+          compiler = compiler_class.new(self, file.root, constant, @compiler_options)
           compiler.decorate
         rescue
           $stderr.puts("Error: `#{compiler_class.name}` failed to generate RBI for `#{constant}`")
@@ -209,18 +189,22 @@ module Tapioca
         file
       end
 
-      sig { params(error: String).returns(T.noreturn) }
+      #: (String error) -> void
       def report_error(error)
         handler = error_handler
         handler.call(error)
-        exit(1)
       end
 
-      sig { void }
+      #: -> void
       def abort_if_pending_migrations!
+        # When running within the add-on, we cannot invoke the abort if pending migrations task because that will exit
+        # the process and crash the Rails runtime server. Instead, the Rails add-on checks for pending migrations and
+        # warns the user, so that they are aware they need to migrate their database
+        return if @lsp_addon
         return unless defined?(::Rake)
 
         Rails.application.load_tasks
+
         if Rake::Task.task_defined?("db:abort_if_pending_migrations")
           Rake::Task["db:abort_if_pending_migrations"].invoke
         end

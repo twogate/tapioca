@@ -8,26 +8,35 @@ module Tapioca
       include Runtime::Reflection
       include RBIHelper
 
-      IGNORED_SYMBOLS = T.let(["YAML", "MiniTest", "Mutex"], T::Array[String])
+      IGNORED_SYMBOLS = ["YAML", "MiniTest", "Mutex"] #: Array[String]
 
-      sig { returns(Gemfile::GemSpec) }
+      #: Gemfile::GemSpec
       attr_reader :gem
 
-      sig { params(gem: Gemfile::GemSpec, include_doc: T::Boolean, include_loc: T::Boolean).void }
-      def initialize(gem, include_doc: false, include_loc: false)
-        @root = T.let(RBI::Tree.new, RBI::Tree)
+      #: ^(String error) -> void
+      attr_reader :error_handler
+
+      #: (Gemfile::GemSpec gem, error_handler: ^(String error) -> void, ?include_doc: bool, ?include_loc: bool) -> void
+      def initialize(
+        gem,
+        error_handler:,
+        include_doc: false,
+        include_loc: false
+      )
+        @root = RBI::Tree.new #: RBI::Tree
         @gem = gem
-        @seen = T.let(Set.new, T::Set[String])
-        @alias_namespace = T.let(Set.new, T::Set[String])
+        @seen = Set.new #: Set[String]
+        @alias_namespace = Set.new #: Set[String]
+        @error_handler = error_handler
 
-        @events = T.let([], T::Array[Gem::Event])
+        @events = [] #: Array[Gem::Event]
 
-        @payload_symbols = T.let(Static::SymbolLoader.payload_symbols, T::Set[String])
-        @bootstrap_symbols = T.let(load_bootstrap_symbols(@gem), T::Set[String])
+        @payload_symbols = Static::SymbolLoader.payload_symbols #: Set[String]
+        @bootstrap_symbols = load_bootstrap_symbols(@gem) #: Set[String]
 
         @bootstrap_symbols.each { |symbol| push_symbol(symbol) }
 
-        @node_listeners = T.let([], T::Array[Gem::Listeners::Base])
+        @node_listeners = [] #: Array[Gem::Listeners::Base]
         @node_listeners << Gem::Listeners::SorbetTypeVariables.new(self)
         @node_listeners << Gem::Listeners::Mixins.new(self)
         @node_listeners << Gem::Listeners::DynamicMixins.new(self)
@@ -44,7 +53,7 @@ module Tapioca
         @node_listeners << Gem::Listeners::RemoveEmptyPayloadScopes.new(self)
       end
 
-      sig { returns(RBI::Tree) }
+      #: -> RBI::Tree
       def compile
         dispatch(next_event) until @events.empty?
         @root
@@ -52,57 +61,45 @@ module Tapioca
 
       # Events handling
 
-      sig { params(symbol: String).void }
+      #: (String symbol) -> void
       def push_symbol(symbol)
         @events << Gem::SymbolFound.new(symbol)
       end
 
-      sig { params(symbol: String, constant: BasicObject).void.checked(:never) }
+      # @without_runtime
+      #: (String symbol, BasicObject constant) -> void
       def push_constant(symbol, constant)
         @events << Gem::ConstantFound.new(symbol, constant)
       end
 
-      sig { params(symbol: String, constant: Module).void.checked(:never) }
+      #: (String symbol, Module constant) -> void
       def push_foreign_constant(symbol, constant)
         @events << Gem::ForeignConstantFound.new(symbol, constant)
       end
 
-      sig { params(symbol: String, constant: Module, node: RBI::Const).void.checked(:never) }
+      #: (String symbol, Module constant, RBI::Const node) -> void
       def push_const(symbol, constant, node)
         @events << Gem::ConstNodeAdded.new(symbol, constant, node)
       end
 
-      sig do
-        params(symbol: String, constant: Module, node: RBI::Scope).void.checked(:never)
-      end
+      #: (String symbol, Module constant, RBI::Scope node) -> void
       def push_scope(symbol, constant, node)
         @events << Gem::ScopeNodeAdded.new(symbol, constant, node)
       end
 
-      sig do
-        params(symbol: String, constant: Module, node: RBI::Scope).void.checked(:never)
-      end
+      #: (String symbol, Module constant, RBI::Scope node) -> void
       def push_foreign_scope(symbol, constant, node)
         @events << Gem::ForeignScopeNodeAdded.new(symbol, constant, node)
       end
 
-      sig do
-        params(
-          symbol: String,
-          constant: Module,
-          method: UnboundMethod,
-          node: RBI::Method,
-          signature: T.untyped,
-          parameters: T::Array[[Symbol, String]],
-        ).void.checked(:never)
-      end
+      #: (String symbol, Module constant, UnboundMethod method, RBI::Method node, untyped signature, Array[[Symbol, String]] parameters) -> void
       def push_method(symbol, constant, method, node, signature, parameters) # rubocop:disable Metrics/ParameterLists
         @events << Gem::MethodNodeAdded.new(symbol, constant, method, node, signature, parameters)
       end
 
       # Constants and properties filtering
 
-      sig { params(symbol_name: String).returns(T::Boolean) }
+      #: (String symbol_name) -> bool
       def symbol_in_payload?(symbol_name)
         symbol_name = symbol_name[2..-1] if symbol_name.start_with?("::")
         return false unless symbol_name
@@ -110,40 +107,71 @@ module Tapioca
         @payload_symbols.include?(symbol_name)
       end
 
-      # this looks something like:
-      # "(eval at /path/to/file.rb:123)"
-      # and we are just interested in the "/path/to/file.rb" part
-      EVAL_SOURCE_FILE_PATTERN = T.let(/\(eval at (.+):\d+\)/, Regexp)
-
-      sig { params(name: T.any(String, Symbol)).returns(T::Boolean) }
+      #: ((String | Symbol) name) -> bool
       def constant_in_gem?(name)
-        return true unless Object.respond_to?(:const_source_location)
+        loc = const_source_location(name)
 
-        source_file, _ = Object.const_source_location(name)
-        return true unless source_file
-        # If the source location of the constant is "(eval)", all bets are off.
-        return true if source_file == "(eval)"
+        # If the source location of the constant isn't available or is "(eval)", all bets are off.
+        return true if loc.nil? || loc.file.nil? || loc.file == "(eval)"
 
-        # Ruby 3.3 adds automatic definition of source location for evals if
-        # `file` and `line` arguments are not provided. This results in the source
-        # file being something like `(eval at /path/to/file.rb:123)`. We try to parse
-        # this string to get the actual source file.
-        source_file = source_file.sub(EVAL_SOURCE_FILE_PATTERN, "\\1")
-
-        gem.contains_path?(source_file)
+        gem.contains_path?(loc.file)
       end
 
-      sig { params(method: UnboundMethod).returns(T::Boolean) }
-      def method_in_gem?(method)
-        source_location = method.source_location&.first
-        return false if source_location.nil?
+      class MethodDefinitionLookupResult
+        extend T::Helpers
+        abstract!
+      end
 
-        @gem.contains_path?(source_location)
+      # The method doesn't seem to exist
+      class MethodUnknown < MethodDefinitionLookupResult; end
+
+      # The method is not defined in the gem
+      class MethodNotInGem < MethodDefinitionLookupResult; end
+
+      # The method probably defined in the gem but doesn't have a source location
+      class MethodInGemWithoutLocation < MethodDefinitionLookupResult; end
+
+      # The method defined in gem and has a source location
+      class MethodInGemWithLocation < MethodDefinitionLookupResult
+        extend T::Sig
+
+        #: Runtime::SourceLocation
+        attr_reader :location
+
+        #: (Runtime::SourceLocation location) -> void
+        def initialize(location)
+          @location = location
+          super()
+        end
+      end
+
+      #: (Symbol method_name, Module owner) -> MethodDefinitionLookupResult
+      def method_definition_in_gem(method_name, owner)
+        definitions = Tapioca::Runtime::Trackers::MethodDefinition.method_definitions_for(method_name, owner)
+
+        # If the source location of the method isn't available, signal that by returning nil.
+        return MethodUnknown.new if definitions.empty?
+
+        # Look up the first entry that matches a file in the gem.
+        found = definitions.find { |loc| @gem.contains_path?(loc.file) }
+
+        unless found
+          # If the source location of the method is "(eval)", err on the side of caution and include the method.
+          found = definitions.find { |loc| loc.file == "(eval)" }
+          # However, we can just return true to signal that the method should be included.
+          # We can't provide a source location for it, but we want it to be included in the gem RBI.
+          return MethodInGemWithoutLocation.new if found
+        end
+
+        # If we searched but couldn't find a source location in the gem, return false to signal that.
+        return MethodNotInGem.new unless found
+
+        MethodInGemWithLocation.new(found)
       end
 
       # Helpers
 
-      sig { params(constant: Module).returns(T.nilable(String)) }
+      #: (Module constant) -> String?
       def name_of(constant)
         name = name_of_proxy_target(constant, super(class_of(constant)))
         return name if name
@@ -158,7 +186,7 @@ module Tapioca
 
       private
 
-      sig { params(gem: Gemfile::GemSpec).returns(T::Set[String]) }
+      #: (Gemfile::GemSpec gem) -> Set[String]
       def load_bootstrap_symbols(gem)
         engine_symbols = Static::SymbolLoader.engine_symbols(gem)
         gem_symbols = Static::SymbolLoader.gem_symbols(gem)
@@ -168,12 +196,12 @@ module Tapioca
 
       # Events handling
 
-      sig { returns(Gem::Event) }
+      #: -> Gem::Event
       def next_event
         T.must(@events.shift)
       end
 
-      sig { params(event: Gem::Event).void }
+      #: (Gem::Event event) -> void
       def dispatch(event)
         case event
         when Gem::SymbolFound
@@ -187,7 +215,7 @@ module Tapioca
         end
       end
 
-      sig { params(event: Gem::SymbolFound).void }
+      #: (Gem::SymbolFound event) -> void
       def on_symbol(event)
         symbol = event.symbol.delete_prefix("::")
         return if skip_symbol?(symbol)
@@ -196,7 +224,7 @@ module Tapioca
         push_constant(symbol, constant) if Runtime::Reflection.constant_defined?(constant)
       end
 
-      sig { params(event: Gem::ConstantFound).void.checked(:never) }
+      #: (Gem::ConstantFound event) -> void
       def on_constant(event)
         name = event.symbol
         return if skip_constant?(name, event.constant)
@@ -208,14 +236,14 @@ module Tapioca
         end
       end
 
-      sig { params(event: Gem::NodeAdded).void }
+      #: (Gem::NodeAdded event) -> void
       def on_node(event)
         @node_listeners.each { |listener| listener.dispatch(event) }
       end
 
       # Compiling
 
-      sig { params(symbol: String, constant: Module).void }
+      #: (String symbol, Module constant) -> void
       def compile_foreign_constant(symbol, constant)
         return if skip_foreign_constant?(symbol, constant)
         return if seen?(symbol)
@@ -226,7 +254,8 @@ module Tapioca
         push_foreign_scope(symbol, constant, scope)
       end
 
-      sig { params(symbol: String, constant: BasicObject).void.checked(:never) }
+      # @without_runtime
+      #: (String symbol, BasicObject constant) -> void
       def compile_constant(symbol, constant)
         case constant
         when Module
@@ -240,7 +269,7 @@ module Tapioca
         end
       end
 
-      sig { params(name: String, constant: Module).void }
+      #: (String name, Module constant) -> void
       def compile_alias(name, constant)
         return if seen?(name)
 
@@ -261,7 +290,8 @@ module Tapioca
         @root << node
       end
 
-      sig { params(name: String, value: BasicObject).void.checked(:never) }
+      # @without_runtime
+      #: (String name, BasicObject value) -> void
       def compile_object(name, value)
         return if seen?(name)
 
@@ -294,7 +324,7 @@ module Tapioca
         @root << node
       end
 
-      sig { params(name: String, constant: Module).void }
+      #: (String name, Module constant) -> void
       def compile_module(name, constant)
         return if skip_module?(name, constant)
         return if seen?(name)
@@ -305,7 +335,7 @@ module Tapioca
         push_scope(name, constant, scope)
       end
 
-      sig { params(name: String, constant: Module).returns(RBI::Scope) }
+      #: (String name, Module constant) -> RBI::Scope
       def compile_scope(name, constant)
         scope = if constant.is_a?(Class)
           superclass = compile_superclass(constant)
@@ -319,9 +349,9 @@ module Tapioca
         scope
       end
 
-      sig { params(constant: T::Class[T.anything]).returns(T.nilable(String)) }
+      #: (Class[top] constant) -> String?
       def compile_superclass(constant)
-        superclass = T.let(nil, T.nilable(T::Class[T.anything])) # rubocop:disable Lint/UselessAssignment
+        superclass = nil #: Class[top]? # rubocop:disable Lint/UselessAssignment
 
         while (superclass = superclass_of(constant))
           constant_name = name_of(constant)
@@ -370,12 +400,13 @@ module Tapioca
 
       # Constants and properties filtering
 
-      sig { params(name: String).returns(T::Boolean) }
+      #: (String name) -> bool
       def skip_symbol?(name)
         symbol_in_payload?(name) && !@bootstrap_symbols.include?(name)
       end
 
-      sig { params(name: String, constant: T.anything).returns(T::Boolean).checked(:never) }
+      # @without_runtime
+      #: (String name, top constant) -> bool
       def skip_constant?(name, constant)
         return true if name.strip.empty?
         return true if name.start_with?("#<")
@@ -387,7 +418,7 @@ module Tapioca
         false
       end
 
-      sig { params(name: String, constant: Module).returns(T::Boolean) }
+      #: (String name, Module constant) -> bool
       def skip_alias?(name, constant)
         return true if symbol_in_payload?(name)
         return true unless constant_in_gem?(name)
@@ -396,7 +427,8 @@ module Tapioca
         false
       end
 
-      sig { params(name: String, constant: BasicObject).returns(T::Boolean).checked(:never) }
+      # @without_runtime
+      #: (String name, BasicObject constant) -> bool
       def skip_object?(name, constant)
         return true if symbol_in_payload?(name)
         return true unless constant_in_gem?(name)
@@ -404,12 +436,12 @@ module Tapioca
         false
       end
 
-      sig { params(name: String, constant: Module).returns(T::Boolean) }
+      #: (String name, Module constant) -> bool
       def skip_foreign_constant?(name, constant)
         Tapioca::TypeVariableModule === constant
       end
 
-      sig { params(name: String, constant: Module).returns(T::Boolean) }
+      #: (String name, Module constant) -> bool
       def skip_module?(name, constant)
         return true unless defined_in_gem?(constant, strict: false)
         return true if Tapioca::TypeVariableModule === constant
@@ -417,7 +449,7 @@ module Tapioca
         false
       end
 
-      sig { params(constant: Module, strict: T::Boolean).returns(T::Boolean) }
+      #: (Module constant, ?strict: bool) -> bool
       def defined_in_gem?(constant, strict: true)
         files = get_file_candidates(constant)
           .merge(Runtime::Trackers::ConstantDefinition.files_for(constant))
@@ -429,38 +461,38 @@ module Tapioca
         end
       end
 
-      sig { params(constant: Module).returns(T::Set[String]) }
+      #: (Module constant) -> Set[String]
       def get_file_candidates(constant)
         file_candidates_for(constant)
       rescue ArgumentError, NameError
         Set.new
       end
 
-      sig { params(name: String).void }
+      #: (String name) -> void
       def add_to_alias_namespace(name)
         @alias_namespace.add("#{name}::")
       end
 
-      sig { params(name: String).returns(T::Boolean) }
+      #: (String name) -> bool
       def alias_namespaced?(name)
         @alias_namespace.any? do |namespace|
           name.start_with?(namespace)
         end
       end
 
-      sig { params(name: String).void }
+      #: (String name) -> void
       def seen!(name)
         @seen.add(name)
       end
 
-      sig { params(name: String).returns(T::Boolean) }
+      #: (String name) -> bool
       def seen?(name)
         @seen.include?(name)
       end
 
       # Helpers
 
-      sig { params(constant: T.all(Module, T::Generic)).returns(String) }
+      #: ((Module & T::Generic) constant) -> String
       def generic_name_of(constant)
         type_name = T.must(constant.name)
         return type_name if type_name =~ /\[.*\]$/
@@ -476,7 +508,7 @@ module Tapioca
         "#{type_name}[#{type_variable_names}]"
       end
 
-      sig { params(constant: Module, class_name: T.nilable(String)).returns(T.nilable(String)) }
+      #: (Module constant, String? class_name) -> String?
       def name_of_proxy_target(constant, class_name)
         return unless class_name == "ActiveSupport::Deprecation::DeprecatedConstantProxy"
 

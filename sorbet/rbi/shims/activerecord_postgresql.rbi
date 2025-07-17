@@ -4,3 +4,9 @@
 module ActiveRecord::ConnectionAdapters::PostgreSQL::OID::Uuid; end
 module ActiveRecord::ConnectionAdapters::PostgreSQL::OID::Array; end
 module ActiveRecord::ConnectionAdapters::PostgreSQL::OID::Hstore; end
+module ActiveRecord::ConnectionAdapters::PostgreSQL::OID::Cidr; end
+module ActiveRecord::ConnectionAdapters::PostgreSQL::OID::Interval; end
+module ActiveRecord::ConnectionAdapters::PostgreSQL::OID::Range; end
+module ActiveRecord::ConnectionAdapters::PostgreSQL::OID::Bit; end
+module ActiveRecord::ConnectionAdapters::PostgreSQL::OID::BitVarying; end
+module ActiveRecord::ConnectionAdapters::PostgreSQL::OID::Enum; end

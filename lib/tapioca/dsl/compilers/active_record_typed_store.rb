@@ -81,12 +81,12 @@ module Tapioca
       #   end
       # end
       # ~~~
+      #: [ConstantType = singleton(::ActiveRecord::Base)]
       class ActiveRecordTypedStore < Compiler
         extend T::Sig
 
-        ConstantType = type_member { { fixed: T.class_of(::ActiveRecord::Base) } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           stores = constant.typed_stores
           return if stores.values.all? { |store| store.accessors.empty? }
@@ -98,8 +98,7 @@ module Tapioca
             stores.values.each do |store_data|
               store_data.accessors.each do |accessor, name|
                 field = store_data.fields.fetch(accessor)
-                type = type_for(field.type_sym)
-                type = as_nilable_type(type) if field.null
+                type = type_for(field)
                 name ||= field.name # support < 1.5.0
 
                 generate_methods(store_accessors_module, name.to_s, type)
@@ -111,7 +110,8 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             descendants_of(::ActiveRecord::Base).select do |klass|
               klass.include?(ActiveRecord::TypedStore::Behavior)
@@ -121,34 +121,38 @@ module Tapioca
 
         private
 
-        TYPES = T.let(
-          {
-            boolean: "T::Boolean",
-            integer: "Integer",
-            string: "String",
-            float: "Float",
-            date: "Date",
-            time: "Time",
-            datetime: "DateTime",
-            decimal: "BigDecimal",
-            any: "T.untyped",
-          }.freeze,
-          T::Hash[Symbol, String],
-        )
+        TYPES = {
+          boolean: "T::Boolean",
+          integer: "Integer",
+          string: "String",
+          float: "Float",
+          date: "Date",
+          time: "Time",
+          datetime: "DateTime",
+          decimal: "BigDecimal",
+          any: "T.untyped",
+        }.freeze #: Hash[Symbol, String]
 
-        sig { params(attr_type: Symbol).returns(String) }
-        def type_for(attr_type)
-          TYPES.fetch(attr_type, "T.untyped")
+        #: (ActiveRecord::TypedStore::Field field) -> String
+        def type_for(field)
+          type = TYPES.fetch(field.type_sym, "T.untyped")
+
+          type = if field.array
+            # `null: false` applies to the array itself, not the elements, which are always nilable.
+            # https://github.com/byroot/activerecord-typedstore/blob/2f3fb98/spec/support/models.rb#L46C34-L46C45
+            # https://github.com/byroot/activerecord-typedstore/blob/2f3fb98/spec/active_record/typed_store_spec.rb#L854-L857
+            nilable_element_type = as_nilable_type(type)
+            "T::Array[#{nilable_element_type}]"
+          else
+            type
+          end
+
+          type = as_nilable_type(type) if field.null
+
+          type
         end
 
-        sig do
-          params(
-            klass: RBI::Scope,
-            name: String,
-            type: String,
-          )
-            .void
-        end
+        #: (RBI::Scope klass, String name, String type) -> void
         def generate_methods(klass, name, type)
           klass.create_method(
             "#{name}=",

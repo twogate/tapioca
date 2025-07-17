@@ -8,7 +8,7 @@ module Tapioca
     module Compilers
       class ActiveResourceSpec < ::DslSpec
         describe "Tapioca::Dsl::Compilers::ActiveResource" do
-          sig { void }
+          #: -> void
           def before_setup
             require "active_resource"
           end
@@ -18,7 +18,7 @@ module Tapioca
               assert_empty(gathered_constants)
             end
 
-            it "gathers only ActiveResource constants " do
+            it "gathers only ActiveResource constants" do
               add_ruby_file("content.rb", <<~RUBY)
                 class Post < ActiveResource::Base
                 end

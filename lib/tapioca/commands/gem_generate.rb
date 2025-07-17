@@ -6,7 +6,8 @@ module Tapioca
     class GemGenerate < AbstractGem
       private
 
-      sig { override.void }
+      # @override
+      #: -> void
       def execute
         Loaders::Gem.load_application(
           bundle: @bundle,
@@ -45,6 +46,36 @@ module Tapioca
         end
       ensure
         GitAttributes.create_generated_attribute_file(@outpath)
+      end
+
+      #: (Array[String] gem_names) -> Array[Gemfile::GemSpec]
+      def gems_to_generate(gem_names)
+        return @bundle.dependencies if gem_names.empty?
+
+        (gem_names - @exclude).each_with_object([]) do |gem_name, gems|
+          gem = @bundle.gem(gem_name)
+
+          if gem.nil?
+            next if @lsp_addon
+
+            raise Tapioca::Error, set_color("Error: Cannot find gem '#{gem_name}'", :red)
+          end
+
+          gems.concat(gem_dependencies(gem)) if @include_dependencies
+          gems << gem
+        end
+      end
+
+      #: (Gemfile::GemSpec gem, ?Array[Gemfile::GemSpec] dependencies) -> Array[Gemfile::GemSpec]
+      def gem_dependencies(gem, dependencies = [])
+        direct_dependencies = gem.dependencies.filter_map { |dependency| @bundle.gem(dependency.name) }
+        gems = dependencies | direct_dependencies
+
+        if direct_dependencies.empty?
+          gems
+        else
+          direct_dependencies.reduce(gems) { |result, gem| gem_dependencies(gem, result) }
+        end
       end
     end
   end

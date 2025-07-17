@@ -3,9 +3,9 @@
 inherit_gem:
   rubocop-shopify: rubocop.yml
 
-require:
+plugins:
  - rubocop-sorbet
- - rubocop-rspec
+ - rubocop-rspec # useful even though we use minitest/spec
 
 AllCops:
   NewCops: disable
@@ -14,6 +14,13 @@ AllCops:
   - "vendor/**/*"
   Include:
   - "sorbet/rbi/shims/**/*.rbi"
+
+Layout/LeadingCommentSpace:
+  AllowRBSInlineAnnotation: true
+
+Layout/LineLength:
+  Max: 120
+  AllowedPatterns: ['\A\s*#:']
 
 Naming/InclusiveLanguage:
   Exclude:
@@ -26,6 +33,9 @@ RSpec/ExampleLength:
   Enabled: false
 
 RSpec/LeadingSubject:
+  Enabled: false
+
+RSpec/NoExpectationExample:
   Enabled: false
 
 Sorbet:
@@ -42,6 +52,9 @@ Sorbet/TrueSigil:
   Include:
     - "**/*.rb"
     - "**/*.rake"
+  Exclude:
+    - "lib/ruby_lsp/tapioca/server_addon.rb"
+    - "spec/dummy/**/*.rb"
 
 Style/CaseEquality:
   Enabled: false

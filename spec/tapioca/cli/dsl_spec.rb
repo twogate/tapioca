@@ -5,6 +5,8 @@ require "spec_helper"
 
 module Tapioca
   class DslSpec < SpecWithProject
+    include Tapioca::Helpers::Test::Template
+
     describe "cli::dsl" do
       before(:all) do
         @project.write!("config/application.rb", <<~RB)
@@ -37,6 +39,8 @@ module Tapioca
         @project.write!("config/environment.rb", <<~RB)
           require_relative "application.rb"
         RB
+
+        @project.require_default_gems
       end
 
       it "shows an error message for unknown options" do
@@ -97,7 +101,7 @@ module Tapioca
         it "must not generate a .gitattributes file if the output folder is not created" do
           result = @project.tapioca("dsl --outdir output")
 
-          assert_stderr_equals(<<~ERR, result)
+          assert_stderr_includes(result, <<~ERR)
             No classes/modules can be matched for RBI generation.
             Please check that the requested classes/modules include processable DSL methods.
           ERR
@@ -120,15 +124,14 @@ module Tapioca
 
           result = @project.tapioca("dsl")
 
-          assert_stdout_equals(<<~OUT, result)
+          assert_stdout_includes(result, <<~OUT)
             Loading DSL extension classes... Done
             Loading Rails application... Done
             Loading DSL compiler classes... Done
             Compiling DSL RBI files...
-
           OUT
 
-          assert_stderr_equals(<<~ERR, result)
+          assert_stderr_includes(result, <<~ERR)
             No classes/modules can be matched for RBI generation.
             Please check that the requested classes/modules include processable DSL methods.
           ERR
@@ -143,15 +146,14 @@ module Tapioca
 
           result = @project.tapioca("dsl User")
 
-          assert_stdout_equals(<<~OUT, result)
+          assert_stdout_includes(result, <<~OUT)
             Loading DSL extension classes... Done
             Loading Rails application... Done
             Loading DSL compiler classes... Done
             Compiling DSL RBI files...
-
           OUT
 
-          assert_stderr_equals(<<~ERR, result)
+          assert_stderr_includes(result, <<~ERR)
             No classes/modules can be matched for RBI generation.
             Please check that the requested classes/modules include processable DSL methods.
           ERR
@@ -918,15 +920,14 @@ module Tapioca
 
           result = @project.tapioca("dsl path/to/nowhere.rb")
 
-          assert_stdout_equals(<<~OUT, result)
+          assert_stdout_includes(result, <<~OUT)
             Loading DSL extension classes... Done
             Loading Rails application... Done
             Loading DSL compiler classes... Done
             Compiling DSL RBI files...
-
           OUT
 
-          assert_stderr_equals(<<~ERR, result)
+          assert_stderr_includes(result, <<~ERR)
             No classes/modules can be matched for RBI generation.
             Please check that the requested classes/modules include processable DSL methods.
           ERR
@@ -985,6 +986,7 @@ module Tapioca
 
             class CompilerThatIncludesBarModuleInPost < Tapioca::Dsl::Compiler
               extend T::Sig
+              extend T::Generic
 
               ConstantType = type_member { { fixed: T.class_of(::Post) } }
 
@@ -1008,6 +1010,7 @@ module Tapioca
 
             class CompilerThatIncludesFooModuleInPost < Tapioca::Dsl::Compiler
               extend T::Sig
+              extend T::Generic
 
               ConstantType = type_member { { fixed: T.class_of(::Post) } }
 
@@ -1102,6 +1105,7 @@ module Tapioca
             module Foo
               class Compiler < Tapioca::Dsl::Compiler
                 extend T::Sig
+                extend T::Generic
 
                 ConstantType = type_member { { fixed: Job } }
 
@@ -1231,6 +1235,7 @@ module Tapioca
             module Foo
               class Compiler < Tapioca::Dsl::Compiler
                 extend T::Sig
+                extend T::Generic
 
                 ConstantType = type_member { { fixed: Job } }
 
@@ -1400,6 +1405,7 @@ module Tapioca
             module Foo
               class Compiler < Tapioca::Dsl::Compiler
                 extend T::Sig
+                extend T::Generic
 
                 ConstantType = type_member { { fixed: Module } }
 
@@ -1462,6 +1468,7 @@ module Tapioca
             module Foo
               class Compiler < Tapioca::Dsl::Compiler
                 extend T::Sig
+                extend T::Generic
 
                 ConstantType = type_member { { fixed: Module } }
 
@@ -1756,7 +1763,7 @@ module Tapioca
 
         it "generates RBIs for lower versions of activerecord-typedstore" do
           @project.require_real_gem("activerecord-typedstore", "1.4.0")
-          @project.require_real_gem("sqlite3", "1.7.3")
+          @project.require_real_gem("sqlite3")
           @project.bundle_install!
           @project.write!("lib/post.rb", <<~RB)
             require "active_record"
@@ -1833,6 +1840,65 @@ module Tapioca
               end
             end
           RBI
+
+          assert_success_status(result)
+        end
+
+        it "generates RBIs for ActiveResource containing arbitrary constants, and referenced by file path" do
+          @project.require_real_gem("activeresource")
+          @project.bundle_install!
+          @project.write!("lib/post.rb", <<~RUBY)
+            require "active_resource"
+
+            class Post < ActiveResource::Base
+              SOME_CONSTANT = 123
+
+              schema do
+                integer 'id'
+              end
+            end
+          RUBY
+
+          result = @project.tapioca("dsl lib/post.rb")
+
+          assert_stdout_equals(<<~OUT, result)
+            Loading DSL extension classes... Done
+            Loading Rails application... Done
+            Loading DSL compiler classes... Done
+            Compiling DSL RBI files...
+
+                  create  sorbet/rbi/dsl/post.rbi
+
+            Done
+
+            Checking generated RBI files...  Done
+              No errors found
+
+            All operations performed in working directory.
+            Please review changes and commit them.
+          OUT
+
+          assert_empty_stderr(result)
+
+          assert_project_file_equal("sorbet/rbi/dsl/post.rbi", <<~RUBY)
+            # typed: true
+
+            # DO NOT EDIT MANUALLY
+            # This is an autogenerated file for dynamic methods in `Post`.
+            # Please instead update this file by running `bin/tapioca dsl Post`.
+
+
+            class Post
+              sig { returns(Integer) }
+              def id; end
+
+              sig { params(value: Integer).returns(Integer) }
+              def id=(value); end
+
+              sig { returns(T::Boolean) }
+              def id?; end
+            end
+          RUBY
 
           assert_success_status(result)
         end
@@ -2050,6 +2116,10 @@ module Tapioca
       end
 
       describe "custom compilers" do
+        after do
+          project.remove!("sorbet/rbi/dsl")
+        end
+
         it "must load custom compilers from gems" do
           @project.write!("lib/post.rb", <<~RB)
             class Post
@@ -2063,6 +2133,7 @@ module Tapioca
 
               class PostCompiler < Tapioca::Dsl::Compiler
                 extend T::Sig
+                extend T::Generic
 
                 ConstantType = type_member { { fixed: T.class_of(::Post) } }
 
@@ -2137,6 +2208,7 @@ module Tapioca
 
             class PostCompiler < Tapioca::Dsl::Compiler
               extend T::Sig
+              extend T::Generic
 
               ConstantType = type_member { { fixed: T.class_of(::Post) } }
 
@@ -2175,6 +2247,65 @@ module Tapioca
               module GeneratedBar; end
             end
           OUT
+
+          assert_empty_stderr(result)
+          assert_success_status(result)
+        end
+
+        it "must be able to modify behaviour of existing compilers" do
+          @project.write!("lib/post.rb", <<~RB)
+            ::ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: ":memory:")
+
+            class Post < ActiveRecord::Base
+            end
+          RB
+
+          foo = mock_gem("foo", "0.0.1") do
+            write!("lib/tapioca/dsl/compilers/active_record_relation_ext.rb", <<~RB)
+              class Tapioca::Dsl::Compilers::ActiveRecordRelations
+                ID_TYPES = ID_TYPES.union(["Foo"]).freeze
+              end
+            RB
+          end
+
+          @project.require_mock_gem(foo)
+          @project.require_real_gem("activerecord", require: "active_record")
+          @project.require_real_gem("sqlite3")
+          @project.bundle_install!
+
+          result = @project.tapioca("dsl Post")
+
+          assert_stdout_equals(<<~OUT, result)
+            Loading DSL extension classes... Done
+            Loading Rails application... Done
+            Loading DSL compiler classes... Done
+            Compiling DSL RBI files...
+
+                  create  sorbet/rbi/dsl/post.rbi
+
+            Done
+
+            Checking generated RBI files...  Done
+              No errors found
+
+            All operations performed in working directory.
+            Please review changes and commit them.
+          OUT
+
+          assert_project_file_includes("sorbet/rbi/dsl/post.rbi", indented(<<~RBI, 4))
+            sig do
+              params(
+                args: T.any(String, Symbol, ::ActiveSupport::Multibyte::Chars, T::Boolean, BigDecimal, Numeric, ::ActiveRecord::Type::Binary::Data, ::ActiveRecord::Type::Time::Value, Date, Time, ::ActiveSupport::Duration, T::Class[T.anything], Foo)
+              ).returns(::Post)
+            end
+            sig do
+              params(
+                args: T::Array[T.any(String, Symbol, ::ActiveSupport::Multibyte::Chars, T::Boolean, BigDecimal, Numeric, ::ActiveRecord::Type::Binary::Data, ::ActiveRecord::Type::Time::Value, Date, Time, ::ActiveSupport::Duration, T::Class[T.anything], Foo)]
+              ).returns(T::Enumerable[::Post])
+            end
+            sig { params(args: NilClass, block: T.proc.params(object: ::Post).void).returns(T.nilable(::Post)) }
+            def find(args = nil, &block); end
+          RBI
 
           assert_empty_stderr(result)
           assert_success_status(result)
@@ -2263,6 +2394,7 @@ module Tapioca
                 module Compilers
                   class Encryptable < Tapioca::Dsl::Compiler
                     extend T::Sig
+                    extend T::Generic
 
                     ConstantType = type_member {{ fixed: T.class_of(Encryptable) }}
 
@@ -2417,6 +2549,7 @@ module Tapioca
               module Compilers
                 class Encryptable < Tapioca::Dsl::Compiler
                   extend T::Sig
+                  extend T::Generic
 
                   ConstantType = type_member {{ fixed: T.class_of(Encryptable) }}
 
@@ -2512,9 +2645,11 @@ module Tapioca
             Loading DSL extension classes... Hi from test extension
           OUT
 
-          err = "tapioca/tests/dsl_spec/project/sorbet/tapioca/extensions/test.rb:2:in `<top (required)>': " \
-            "Raising from test extension (RuntimeError)"
-          assert_stderr_includes(result, err)
+          err = %r{
+            tapioca/tests/dsl_spec/project/sorbet/tapioca/extensions/test\.rb:2:in\s['`]<main>':\s
+            Raising\sfrom\stest\sextension\s\(RuntimeError\)
+          }x
+          assert_stderr_includes_pattern(result, err)
 
           refute_success_status(result)
         end
@@ -2801,6 +2936,56 @@ module Tapioca
         end
       end
 
+      describe "rails-like-applications" do
+        before(:all) do
+          @project.write!("config/environment.rb", <<~RB)
+            require_relative "application.rb"
+          RB
+
+          @project.write!("config/application.rb", <<~RB)
+            # Don't define any constant named `Rails`.
+            require "smart_properties"
+
+            class Post
+              include SmartProperties
+              property :title, accepts: String
+            end
+          RB
+
+          @project.require_real_gem("smart_properties", "1.15.0")
+          @project.bundle_install!
+        end
+
+        after(:all) do
+          @project.remove!("config/application.rb")
+        end
+
+        it "shows a warning about the Rails constant not having been loaded" do
+          res = @project.tapioca("dsl")
+
+          assert_stdout_equals(<<~OUT, res)
+            Loading DSL extension classes... Done
+            Loading Rails application...\u0020
+            Tried to load the app from `config/environment` as a Rails application but the `Rails` constant wasn't defined after loading the file.
+            Done
+            Loading DSL compiler classes... Done
+            Compiling DSL RBI files...
+
+                  create  sorbet/rbi/dsl/post.rbi
+
+            Done
+
+            Checking generated RBI files...  Done
+              No errors found
+
+            All operations performed in working directory.
+            Please review changes and commit them.
+          OUT
+          assert_empty_stderr(res)
+          assert_success_status(res)
+        end
+      end
+
       describe "halt-upon-load-error" do
         before(:all) do
           @project.write!("config/environment.rb", <<~RB)
@@ -2834,9 +3019,11 @@ module Tapioca
             "please pass `--no-halt-upon-load-error` to the tapioca command in sorbet/tapioca/config.yml or in CLI." \
             "\nError during application loading"
           assert_stdout_includes(res, out)
-          err = "tapioca/tests/dsl_spec/project/config/application.rb:5:in `<class:Application>': Error during " \
-            "application loading (RuntimeError)"
-          assert_stderr_includes(res, err)
+          err = %r{
+            tapioca/tests/dsl_spec/project/config/application\.rb:5:in\s['`]<class:Application>':\s
+            Error\sduring\sapplication\sloading\s\(RuntimeError\)
+          }x
+          assert_stderr_includes_pattern(res, err)
           refute_success_status(res)
         end
 
@@ -2849,7 +3036,10 @@ module Tapioca
             "please pass `--no-halt-upon-load-error` to the tapioca command in sorbet/tapioca/config.yml or in CLI." \
             "\nError during application loading"
           assert_stdout_includes(res, out)
-          assert_stdout_includes(res, "tapioca/tests/dsl_spec/project/config/application.rb:5:in `<class:Application>'")
+          assert_stdout_includes_pattern(
+            res,
+            %r{tapioca/tests/dsl_spec/project/config/application\.rb:5:in ['`]<class:Application>'},
+          )
           assert_stdout_includes(res, <<~OUT)
             Continuing RBI generation without loading the Rails application.
             Done
@@ -2895,6 +3085,69 @@ module Tapioca
             cart_rbi = @project.read("sorbet/rbi/dsl/cart.rbi")
             assert_includes(cart_rbi, "def has_value_type?; end")
           end
+        end
+      end
+
+      describe "options for built-in compilers" do
+        it "is able to pass 'untyped' to ActiveRecordColumns compiler" do
+          @project.require_real_gem("activerecord")
+          @project.require_real_gem("sqlite3")
+          @project.bundle_install!
+          @project.write!("lib/post.rb", <<~RB)
+            require "active_record"
+
+            ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: ":memory:")
+
+            ActiveRecord::Migration.suppress_messages do
+              ActiveRecord::Schema.define do
+                create_table :posts do |t|
+                end
+              end
+            end
+
+            class Post < ActiveRecord::Base
+            end
+          RB
+
+          result = @project.tapioca(
+            "dsl Post --only=ActiveRecordColumns --compiler-options='ActiveRecordColumnTypes:untyped'",
+          )
+
+          assert_stdout_equals(<<~OUT, result)
+            Loading DSL extension classes... Done
+            Loading Rails application... Done
+            Loading DSL compiler classes... Done
+            Compiling DSL RBI files...
+
+                  create  sorbet/rbi/dsl/post.rbi
+
+            Done
+
+            Checking generated RBI files...  Done
+              No errors found
+
+            All operations performed in working directory.
+            Please review changes and commit them.
+          OUT
+
+          assert_empty_stderr(result)
+
+          assert_project_file_includes("sorbet/rbi/dsl/post.rbi", <<~RBI)
+            class Post
+              include GeneratedAttributeMethods
+
+              module GeneratedAttributeMethods
+                sig { returns(T.untyped) }
+                def id; end
+
+                sig { params(value: T.untyped).returns(T.untyped) }
+                def id=(value); end
+
+                sig { returns(T::Boolean) }
+                def id?; end
+          RBI
+
+          assert_success_status(result)
         end
       end
     end

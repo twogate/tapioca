@@ -719,7 +719,7 @@ class Net::HTTP < ::Net::Protocol
   #
   # @return [Boolean]
   #
-  # source://net-http//lib/net/http.rb#1413
+  # source://net-http//lib/net/http.rb#1417
   def active?; end
 
   # Returns the string host name or host IP given as argument +address+ in ::new.
@@ -914,7 +914,7 @@ class Net::HTTP < ::Net::Protocol
   #
   #   #<Net::HTTPOK 200 OK readbody=false>
   #
-  # source://net-http//lib/net/http.rb#2176
+  # source://net-http//lib/net/http.rb#2234
   def get2(path, initheader = T.unsafe(nil), &block); end
 
   # Sends a HEAD request to the server;
@@ -943,7 +943,7 @@ class Net::HTTP < ::Net::Protocol
   #   http = Net::HTTP.new(hostname)
   #   http.head('/todos/1') # => #<Net::HTTPOK 200 OK readbody=true>
   #
-  # source://net-http//lib/net/http.rb#2189
+  # source://net-http//lib/net/http.rb#2235
   def head2(path, initheader = T.unsafe(nil), &block); end
 
   # Sets or returns whether to ignore end-of-file when reading a response body
@@ -1269,7 +1269,7 @@ class Net::HTTP < ::Net::Protocol
   #
   #   "{\n  \"xyzzy\": \"\",\n  \"id\": 201\n}"
   #
-  # source://net-http//lib/net/http.rb#2216
+  # source://net-http//lib/net/http.rb#2236
   def post2(path, data, initheader = T.unsafe(nil), &block); end
 
   # Sends a PROPFIND request to the server;
@@ -1378,13 +1378,13 @@ class Net::HTTP < ::Net::Protocol
   # Returns the address of the proxy server, if defined, +nil+ otherwise;
   # see {Proxy Server}[rdoc-ref:Net::HTTP@Proxy+Server].
   #
-  # source://net-http//lib/net/http.rb#1807
+  # source://net-http//lib/net/http.rb#1847
   def proxyaddr; end
 
   # Returns the port number of the proxy server, if defined, +nil+ otherwise;
   # see {Proxy Server}[rdoc-ref:Net::HTTP@Proxy+Server].
   #
-  # source://net-http//lib/net/http.rb#1817
+  # source://net-http//lib/net/http.rb#1848
   def proxyport; end
 
   # Sends a PUT request to the server;
@@ -1410,7 +1410,7 @@ class Net::HTTP < ::Net::Protocol
   #   http.put('/todos/1', 'xyzzy')
   #   # => #<Net::HTTPOK 200 OK readbody=true>
   #
-  # source://net-http//lib/net/http.rb#2230
+  # source://net-http//lib/net/http.rb#2237
   def put2(path, data, initheader = T.unsafe(nil), &block); end
 
   # Returns the numeric (\Integer or \Float) number of seconds
@@ -1836,7 +1836,7 @@ class Net::HTTP < ::Net::Protocol
 
   # Adds a message to debugging output
   #
-  # source://net-http//lib/net/http.rb#2472
+  # source://net-http//lib/net/http.rb#2478
   def D(msg); end
 
   # source://net-http//lib/net/http.rb#2464
@@ -1991,14 +1991,14 @@ class Net::HTTP < ::Net::Protocol
     #
     # @return [Boolean]
     #
-    # source://net-http//lib/net/http.rb#746
+    # source://net-http//lib/net/http.rb#751
     def is_version_1_1?; end
 
     # Returns +true+; retained for compatibility.
     #
     # @return [Boolean]
     #
-    # source://net-http//lib/net/http.rb#741
+    # source://net-http//lib/net/http.rb#752
     def is_version_1_2?; end
 
     # Returns a new \Net::HTTP object +http+
@@ -2032,6 +2032,9 @@ class Net::HTTP < ::Net::Protocol
     #
     # source://net-http//lib/net/http.rb#1065
     def new(address, port = T.unsafe(nil), p_addr = T.unsafe(nil), p_port = T.unsafe(nil), p_user = T.unsafe(nil), p_pass = T.unsafe(nil), p_no_proxy = T.unsafe(nil)); end
+
+    # source://net-http//lib/net/http.rb#1033
+    def newobj(*_arg0); end
 
     # Posts data to a host; returns a Net::HTTPResponse object.
     #
@@ -2278,6 +2281,11 @@ Net::HTTPClientError::EXCEPTION_TYPE = Net::HTTPClientException
 # source://net-http//lib/net/http/backward.rb#23
 Net::HTTPClientErrorCode = Net::HTTPClientError
 
+# source://net-http//lib/net/http/exceptions.rb#23
+class Net::HTTPClientException < ::Net::ProtoServerError
+  include ::Net::HTTPExceptions
+end
+
 # Response class for <tt>Early Hints</tt> responses (status code 103).
 #
 # The <tt>Early Hints</tt> indicates that the server has received
@@ -2297,6 +2305,36 @@ class Net::HTTPEarlyHints < ::Net::HTTPInformation; end
 
 # source://net-http//lib/net/http/responses.rb#148
 Net::HTTPEarlyHints::HAS_BODY = T.let(T.unsafe(nil), FalseClass)
+
+# source://net-http//lib/net/http/exceptions.rb#15
+class Net::HTTPError < ::Net::ProtocolError
+  include ::Net::HTTPExceptions
+end
+
+# Net::HTTP exception class.
+# You cannot use Net::HTTPExceptions directly; instead, you must use
+# its subclasses.
+#
+# source://net-http//lib/net/http/exceptions.rb#6
+module Net::HTTPExceptions
+  # source://net-http//lib/net/http/exceptions.rb#7
+  def initialize(msg, res); end
+
+  # Returns the value of attribute response.
+  #
+  # source://net-http//lib/net/http/exceptions.rb#12
+  def data; end
+
+  # Returns the value of attribute response.
+  #
+  # source://net-http//lib/net/http/exceptions.rb#11
+  def response; end
+end
+
+# source://net-http//lib/net/http/exceptions.rb#27
+class Net::HTTPFatalError < ::Net::ProtoFatalError
+  include ::Net::HTTPExceptions
+end
 
 # source://net-http//lib/net/http/backward.rb#24
 Net::HTTPFatalErrorCode = Net::HTTPClientError
@@ -2738,7 +2776,7 @@ module Net::HTTPHeader
   #
   # Net::HTTPHeader#canonical_each is an alias for Net::HTTPHeader#each_capitalized.
   #
-  # source://net-http//lib/net/http/header.rb#484
+  # source://net-http//lib/net/http/header.rb#491
   def canonical_each; end
 
   # Returns +true+ if field <tt>'Transfer-Encoding'</tt>
@@ -2832,7 +2870,7 @@ module Net::HTTPHeader
   #
   # Net::HTTPHeader#content_type= is an alias for Net::HTTPHeader#set_content_type.
   #
-  # source://net-http//lib/net/http/header.rb#772
+  # source://net-http//lib/net/http/header.rb#776
   def content_type=(type, params = T.unsafe(nil)); end
 
   # Removes the header for the given case-insensitive +key+
@@ -2865,7 +2903,7 @@ module Net::HTTPHeader
   #
   # Net::HTTPHeader#each is an alias for Net::HTTPHeader#each_header.
   #
-  # source://net-http//lib/net/http/header.rb#364
+  # source://net-http//lib/net/http/header.rb#371
   def each; end
 
   # Like #each_header, but the keys are returned in capitalized form.
@@ -2939,7 +2977,7 @@ module Net::HTTPHeader
   #
   # Net::HTTPHeader#each_name is an alias for Net::HTTPHeader#each_key.
   #
-  # source://net-http//lib/net/http/header.rb#391
+  # source://net-http//lib/net/http/header.rb#396
   def each_key(&block); end
 
   # Calls the block with each field key:
@@ -3049,7 +3087,7 @@ module Net::HTTPHeader
   #
   # Net::HTTPHeader#form_data= is an alias for Net::HTTPHeader#set_form_data.
   #
-  # source://net-http//lib/net/http/header.rb#812
+  # source://net-http//lib/net/http/header.rb#819
   def form_data=(params, sep = T.unsafe(nil)); end
 
   # Returns the array field value for the given +key+,
@@ -3077,7 +3115,7 @@ module Net::HTTPHeader
   # source://net-http//lib/net/http/header.rb#463
   def key?(key); end
 
-  # source://net-http//lib/net/http/header.rb#208
+  # source://net-http//lib/net/http/header.rb#212
   def length; end
 
   # Returns the leading ('type') part of the
@@ -3143,7 +3181,7 @@ module Net::HTTPHeader
   #
   # Net::HTTPHeader#range= is an alias for Net::HTTPHeader#set_range.
   #
-  # source://net-http//lib/net/http/header.rb#576
+  # source://net-http//lib/net/http/header.rb#605
   def range=(r, e = T.unsafe(nil)); end
 
   # Returns the integer representing length of the value of field
@@ -3529,6 +3567,92 @@ Net::HTTPRedirection::EXCEPTION_TYPE = Net::HTTPRetriableError
 # source://net-http//lib/net/http/backward.rb#21
 Net::HTTPRedirectionCode = Net::HTTPRedirection
 
+# This class is the base class for \Net::HTTP request classes.
+# The class should not be used directly;
+# instead you should use its subclasses, listed below.
+#
+# == Creating a Request
+#
+# An request object may be created with either a URI or a string hostname:
+#
+#   require 'net/http'
+#   uri = URI('https://jsonplaceholder.typicode.com/')
+#   req = Net::HTTP::Get.new(uri)          # => #<Net::HTTP::Get GET>
+#   req = Net::HTTP::Get.new(uri.hostname) # => #<Net::HTTP::Get GET>
+#
+# And with any of the subclasses:
+#
+#   req = Net::HTTP::Head.new(uri) # => #<Net::HTTP::Head HEAD>
+#   req = Net::HTTP::Post.new(uri) # => #<Net::HTTP::Post POST>
+#   req = Net::HTTP::Put.new(uri)  # => #<Net::HTTP::Put PUT>
+#   # ...
+#
+# The new instance is suitable for use as the argument to Net::HTTP#request.
+#
+# == Request Headers
+#
+# A new request object has these header fields by default:
+#
+#   req.to_hash
+#   # =>
+#   {"accept-encoding"=>["gzip;q=1.0,deflate;q=0.6,identity;q=0.3"],
+#   "accept"=>["*/*"],
+#   "user-agent"=>["Ruby"],
+#   "host"=>["jsonplaceholder.typicode.com"]}
+#
+# See:
+#
+# - {Request header Accept-Encoding}[https://en.wikipedia.org/wiki/List_of_HTTP_header_fields#Accept-Encoding]
+#   and {Compression and Decompression}[rdoc-ref:Net::HTTP@Compression+and+Decompression].
+# - {Request header Accept}[https://en.wikipedia.org/wiki/List_of_HTTP_header_fields#accept-request-header].
+# - {Request header User-Agent}[https://en.wikipedia.org/wiki/List_of_HTTP_header_fields#user-agent-request-header].
+# - {Request header Host}[https://en.wikipedia.org/wiki/List_of_HTTP_header_fields#host-request-header].
+#
+# You can add headers or override default headers:
+#
+#   #   res = Net::HTTP::Get.new(uri, {'foo' => '0', 'bar' => '1'})
+#
+# This class (and therefore its subclasses) also includes (indirectly)
+# module Net::HTTPHeader, which gives access to its
+# {methods for setting headers}[rdoc-ref:Net::HTTPHeader@Setters].
+#
+# == Request Subclasses
+#
+# Subclasses for HTTP requests:
+#
+# - Net::HTTP::Get
+# - Net::HTTP::Head
+# - Net::HTTP::Post
+# - Net::HTTP::Put
+# - Net::HTTP::Delete
+# - Net::HTTP::Options
+# - Net::HTTP::Trace
+# - Net::HTTP::Patch
+#
+# Subclasses for WebDAV requests:
+#
+# - Net::HTTP::Propfind
+# - Net::HTTP::Proppatch
+# - Net::HTTP::Mkcol
+# - Net::HTTP::Copy
+# - Net::HTTP::Move
+# - Net::HTTP::Lock
+# - Net::HTTP::Unlock
+#
+# source://net-http//lib/net/http/request.rb#75
+class Net::HTTPRequest < ::Net::HTTPGenericRequest
+  # Creates an HTTP request object for +path+.
+  #
+  # +initheader+ are the default headers to use.  Net::HTTP adds
+  # Accept-Encoding to enable compression of the response body unless
+  # Accept-Encoding or Range are supplied in +initheader+.
+  #
+  # @return [HTTPRequest] a new instance of HTTPRequest
+  #
+  # source://net-http//lib/net/http/request.rb#82
+  def initialize(path, initheader = T.unsafe(nil)); end
+end
+
 # source://net-http//lib/net/http/responses.rb#709
 Net::HTTPRequestURITooLarge = Net::HTTPURITooLong
 
@@ -3771,7 +3895,7 @@ class Net::HTTPResponse
   #   "{\n  \"userId\": 1,\n  \"id\": 1,\n  \"title\": \"delectus aut autem\",\n  \"completed\": false\n}"
   #   nil
   #
-  # source://net-http//lib/net/http/response.rb#400
+  # source://net-http//lib/net/http/response.rb#409
   def entity; end
 
   # @raise [error_type()]
@@ -3812,7 +3936,7 @@ class Net::HTTPResponse
 
   # The HTTP result message sent by the server. For example, 'Not Found'.
   #
-  # source://net-http//lib/net/http/response.rb#216
+  # source://net-http//lib/net/http/response.rb#217
   def msg; end
 
   # Gets the entity body returned by the remote HTTP server.
@@ -4010,6 +4134,11 @@ Net::HTTPResponseReceiver = Net::HTTPResponse
 
 # source://net-http//lib/net/http/backward.rb#22
 Net::HTTPRetriableCode = Net::HTTPRedirection
+
+# source://net-http//lib/net/http/exceptions.rb#19
+class Net::HTTPRetriableError < ::Net::ProtoRetriableError
+  include ::Net::HTTPExceptions
+end
 
 # source://net-http//lib/net/http/responses.rb#81
 Net::HTTPServerError::EXCEPTION_TYPE = Net::HTTPFatalError

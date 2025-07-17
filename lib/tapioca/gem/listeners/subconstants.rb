@@ -11,14 +11,14 @@ module Tapioca
 
         private
 
-        sig { override.params(event: ScopeNodeAdded).void }
+        # @override
+        #: (ScopeNodeAdded event) -> void
         def on_scope(event)
           symbol = event.symbol
-          return if @pipeline.symbol_in_payload?(symbol) && event.node.empty?
+          constant = event.constant
 
           prefix = symbol == "Object" ? "" : symbol
 
-          constant = event.constant
           constants_of(constant).sort.uniq.map do |constant_name|
             name = "#{prefix}::#{constant_name}"
             subconstant = constantize(name)
@@ -32,7 +32,8 @@ module Tapioca
           end
         end
 
-        sig { override.params(event: NodeAdded).returns(T::Boolean) }
+        # @override
+        #: (NodeAdded event) -> bool
         def ignore?(event)
           event.is_a?(Tapioca::Gem::ForeignScopeNodeAdded)
         end

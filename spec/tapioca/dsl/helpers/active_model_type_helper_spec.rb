@@ -21,33 +21,70 @@ module Tapioca
 
           Elem = type_member
 
-          sig { params(value: T.untyped).returns(Elem) }
+          #: (untyped value) -> Elem
           def cast(value)
             super
           end
         end
 
         describe "type_for" do
-          it "discovers custom type from signature on deserialize method" do
+          it "discovers custom type from __tapioca_type method" do
             klass = Class.new(ActiveModel::Type::Value) do
               extend T::Sig
 
-              sig { params(value: T.untyped).returns(String) }
+              #: -> untyped
+              def __tapioca_type
+                T.any(Integer, String)
+              end
+
+              #: (untyped value) -> String
               def cast(value)
                 super
               end
 
-              sig { params(value: T.untyped).returns(Float) }
+              #: (untyped value) -> Float
               def deserialize(value)
                 super
               end
 
-              sig { params(value: Symbol).returns(T.untyped) }
+              #: (Symbol value) -> untyped
               def serialize(value)
                 super
               end
 
-              sig { params(value: T.untyped).returns(Integer) }
+              #: (untyped value) -> Integer
+              def cast_value(value)
+                super
+              end
+            end
+
+            assert_equal(
+              "T.any(::Integer, ::String)",
+              Tapioca::Dsl::Helpers::ActiveModelTypeHelper.type_for(klass.new),
+              "The type returned from `__tapioca_type` has the highest priority.",
+            )
+          end
+
+          it "discovers custom type from signature on deserialize method" do
+            klass = Class.new(ActiveModel::Type::Value) do
+              extend T::Sig
+
+              #: (untyped value) -> String
+              def cast(value)
+                super
+              end
+
+              #: (untyped value) -> Float
+              def deserialize(value)
+                super
+              end
+
+              #: (Symbol value) -> untyped
+              def serialize(value)
+                super
+              end
+
+              #: (untyped value) -> Integer
               def cast_value(value)
                 super
               end
@@ -56,7 +93,7 @@ module Tapioca
             assert_equal(
               "::Float",
               Tapioca::Dsl::Helpers::ActiveModelTypeHelper.type_for(klass.new),
-              "The return type of `deserialize` has the highest priority.",
+              "The return type of `deserialize` has second priority.",
             )
           end
 
@@ -64,22 +101,22 @@ module Tapioca
             klass = Class.new(ActiveModel::Type::Value) do
               extend T::Sig
 
-              sig { params(value: T.untyped).returns(String) }
+              #: (untyped value) -> String
               def cast(value)
                 super
               end
 
-              sig { params(value: T.untyped).returns(T.untyped) }
+              #: (untyped value) -> untyped
               def deserialize(value)
                 super
               end
 
-              sig { params(value: Symbol).returns(T.untyped) }
+              #: (Symbol value) -> untyped
               def serialize(value)
                 super
               end
 
-              sig { params(value: T.untyped).returns(Integer) }
+              #: (untyped value) -> Integer
               def cast_value(value)
                 super
               end
@@ -88,7 +125,7 @@ module Tapioca
             assert_equal(
               "::String",
               Tapioca::Dsl::Helpers::ActiveModelTypeHelper.type_for(klass.new),
-              "The return type of `cast` has second priority.",
+              "The return type of `cast` has third priority.",
             )
           end
 
@@ -96,22 +133,22 @@ module Tapioca
             klass = Class.new(ActiveModel::Type::Value) do
               extend T::Sig
 
-              sig { params(value: T.untyped).returns(T.untyped) }
+              #: (untyped value) -> untyped
               def cast(value)
                 super
               end
 
-              sig { params(value: T.untyped).returns(T.untyped) }
+              #: (untyped value) -> untyped
               def deserialize(value)
                 super
               end
 
-              sig { params(value: Symbol).returns(T.untyped) }
+              #: (Symbol value) -> untyped
               def serialize(value)
                 super
               end
 
-              sig { params(value: T.untyped).returns(Integer) }
+              #: (untyped value) -> Integer
               def cast_value(value)
                 super
               end
@@ -120,7 +157,7 @@ module Tapioca
             assert_equal(
               "::Integer",
               Tapioca::Dsl::Helpers::ActiveModelTypeHelper.type_for(klass.new),
-              "The return type of `cast_value` has third priority.",
+              "The return type of `cast_value` has fourth priority.",
             )
           end
 
@@ -128,22 +165,22 @@ module Tapioca
             klass = Class.new(ActiveModel::Type::Value) do
               extend T::Sig
 
-              sig { params(value: T.untyped).returns(T.untyped) }
+              #: (untyped value) -> untyped
               def cast(value)
                 super
               end
 
-              sig { params(value: T.untyped).returns(T.untyped) }
+              #: (untyped value) -> untyped
               def deserialize(value)
                 super
               end
 
-              sig { params(value: Symbol).returns(T.untyped) }
+              #: (Symbol value) -> untyped
               def serialize(value)
                 super
               end
 
-              sig { params(value: T.untyped).returns(T.untyped) }
+              #: (untyped value) -> untyped
               def cast_value(value)
                 super
               end
@@ -152,7 +189,7 @@ module Tapioca
             assert_equal(
               "::Symbol",
               Tapioca::Dsl::Helpers::ActiveModelTypeHelper.type_for(klass.new),
-              "The argument type of `serialize` has fourth priority.",
+              "The argument type of `serialize` has fifth priority.",
             )
           end
 
@@ -160,7 +197,7 @@ module Tapioca
             klass = Class.new do
               extend T::Sig
 
-              sig { params(value: T.untyped).returns(Integer) }
+              #: (untyped value) -> Integer
               def cast(value)
               end
             end
@@ -175,7 +212,7 @@ module Tapioca
             klass = Class.new(ActiveModel::Type::Value) do
               extend T::Sig
 
-              sig { params(value: T.untyped).returns(ValueType[Integer]) }
+              #: (untyped value) -> ValueType[Integer]
               def cast(value)
               end
             end
@@ -197,22 +234,22 @@ module Tapioca
             klass = Class.new(ActiveModel::Type::Value) do
               extend T::Sig
 
-              sig { params(value: T.untyped).returns(T.untyped) }
+              #: (untyped value) -> untyped
               def cast(value)
                 super
               end
 
-              sig { params(value: T.untyped).returns(T.noreturn) }
+              #: (untyped value) -> bot
               def deserialize(value)
                 super
               end
 
-              sig { params(value: T.untyped).returns(T.untyped) }
+              #: (untyped value) -> untyped
               def serialize(value)
                 super
               end
 
-              sig { params(value: T.untyped).returns(T.untyped) }
+              #: (untyped value) -> untyped
               def cast_value(value)
                 super
               end
@@ -255,6 +292,31 @@ module Tapioca
             assert_equal(
               "T.untyped",
               Tapioca::Dsl::Helpers::ActiveModelTypeHelper.type_for(klass.new),
+            )
+          end
+        end
+
+        describe "assume_nilable?" do
+          it "assumes the type is nilable when `#__tapioca_type` is not defined" do
+            klass = Class.new(ActiveModel::Type::Value)
+
+            assert_equal(
+              true,
+              Tapioca::Dsl::Helpers::ActiveModelTypeHelper.assume_nilable?(klass.new),
+            )
+          end
+
+          it "does not assume the type is nilable when `#__tapioca_type` is defined" do
+            klass = Class.new(ActiveModel::Type::Value) do
+              extend T::Sig
+
+              #: -> Module
+              def __tapioca_type = String
+            end
+
+            assert_equal(
+              false,
+              Tapioca::Dsl::Helpers::ActiveModelTypeHelper.assume_nilable?(klass.new),
             )
           end
         end

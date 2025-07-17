@@ -5,7 +5,7 @@ module T
   module Types
     class Simple
       module NamePatch
-        NAME_METHOD = T.let(Module.instance_method(:name), UnboundMethod)
+        NAME_METHOD = Module.instance_method(:name) #: UnboundMethod
 
         def name
           # Sorbet memoizes this method into the `@name` instance variable but
@@ -16,7 +16,7 @@ module T
         def qualified_name_of(constant)
           name = NAME_METHOD.bind_call(constant)
           name = nil if name&.start_with?("#<")
-          return if name.nil?
+          return "::T.untyped" if name.nil?
 
           if name.start_with?("::")
             name

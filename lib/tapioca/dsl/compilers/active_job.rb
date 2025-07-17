@@ -38,12 +38,12 @@ module Tapioca
       #   def self.perform_now(user); end
       # end
       # ~~~
+      #: [ConstantType = singleton(::ActiveJob::Base)]
       class ActiveJob < Compiler
         extend T::Sig
 
-        ConstantType = type_member { { fixed: T.class_of(::ActiveJob::Base) } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           return unless constant.instance_methods(false).include?(:perform)
 
@@ -71,12 +71,7 @@ module Tapioca
 
         private
 
-        sig do
-          params(
-            parameters: T::Array[RBI::TypedParam],
-            constant_name: T.nilable(String),
-          ).returns(T::Array[RBI::TypedParam])
-        end
+        #: (Array[RBI::TypedParam] parameters, String? constant_name) -> Array[RBI::TypedParam]
         def perform_later_parameters(parameters, constant_name)
           if ::Gem::Requirement.new(">= 7.0").satisfied_by?(::ActiveJob.gem_version)
             parameters.reject! { |typed_param| RBI::BlockParam === typed_param.param }
@@ -92,7 +87,8 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             descendants_of(::ActiveJob::Base)
           end

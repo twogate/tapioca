@@ -40,30 +40,21 @@ module Tapioca
       #   def password_confirmation=(password_confirmation); end
       # end
       # ~~~
+      #: [ConstantType = (Class[ActiveModel::Validations] & ActiveModel::Validations::HelperMethods & ActiveModel::Validations::ClassMethods)]
       class ActiveModelValidationsConfirmation < Compiler
         extend T::Sig
 
-        ConstantType = type_member do
-          {
-            fixed: T.all(
-              T::Class[ActiveModel::Validations],
-              ActiveModel::Validations::HelperMethods,
-              ActiveModel::Validations::ClassMethods,
-            ),
-          }
-        end
-
         class << self
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             # Collect all the classes that include ActiveModel::Validations
-            all_classes.select do |c|
-              c < ActiveModel::Validations
-            end
+            all_classes.select { |c| ActiveModel::Validations > c }
           end
         end
 
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           confirmation_validators = constant.validators.grep(ActiveModel::Validations::ConfirmationValidator)
 

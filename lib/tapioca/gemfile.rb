@@ -14,34 +14,34 @@ module Tapioca
       )
     end
 
-    sig { returns(Bundler::Definition) }
+    #: Bundler::Definition
     attr_reader(:definition)
 
-    sig { returns(T::Array[GemSpec]) }
+    #: Array[GemSpec]
     attr_reader(:dependencies)
 
-    sig { returns(T::Array[String]) }
+    #: Array[String]
     attr_reader(:missing_specs)
 
-    sig { params(excluded_gems: T::Array[String]).void }
+    #: (Array[String] excluded_gems) -> void
     def initialize(excluded_gems)
-      @gemfile = T.let(File.new(Bundler.default_gemfile), File)
-      @lockfile = T.let(File.new(Bundler.default_lockfile), File)
-      @definition = T.let(Bundler::Dsl.evaluate(gemfile, lockfile, {}), Bundler::Definition)
+      @gemfile = File.new(Bundler.default_gemfile) #: File
+      @lockfile = File.new(Bundler.default_lockfile) #: File
+      @definition = Bundler::Dsl.evaluate(gemfile, lockfile, {}) #: Bundler::Definition
       @excluded_gems = excluded_gems
 
       dependencies, missing_specs = load_dependencies
 
-      @dependencies = T.let(dependencies, T::Array[GemSpec])
-      @missing_specs = T.let(missing_specs, T::Array[String])
+      @dependencies = dependencies #: Array[GemSpec]
+      @missing_specs = missing_specs #: Array[String]
     end
 
-    sig { params(gem_name: String).returns(T.nilable(GemSpec)) }
+    #: (String gem_name) -> GemSpec?
     def gem(gem_name)
       dependencies.detect { |dep| dep.name == gem_name }
     end
 
-    sig { void }
+    #: -> void
     def require_bundle
       BundlerExt::AutoRequireHook.override_require_false(exclude: @excluded_gems) do
         T.unsafe(runtime).require(*groups)
@@ -50,10 +50,10 @@ module Tapioca
 
     private
 
-    sig { returns(File) }
+    #: File
     attr_reader(:gemfile, :lockfile)
 
-    sig { returns([T::Array[GemSpec], T::Array[String]]) }
+    #: -> [Array[GemSpec], Array[String]]
     def load_dependencies
       materialized_dependencies, missing_specs = materialize_deps
       dependencies = materialized_dependencies
@@ -64,31 +64,40 @@ module Tapioca
       [dependencies, missing_specs]
     end
 
-    sig { returns([T::Enumerable[Spec], T::Array[String]]) }
+    #: -> [T::Enumerable[Spec], Array[String]]
     def materialize_deps
-      deps = definition.locked_gems.dependencies.values
-      materialized_dependencies = definition.resolve.materialize(deps)
-      missing_spec_names = materialized_dependencies.missing_specs.map(&:name).to_set
-      missing_specs = materialized_dependencies.missing_specs.map do |spec|
-        "#{spec.name} (#{spec.version})"
+      deps = definition.locked_gems.dependencies.except(*@excluded_gems).values
+      resolve = definition.resolve
+      materialized_dependencies = resolve.materialize(deps)
+
+      if Bundler::VERSION >= "2.6.0"
+        missing_specs = resolve.missing_specs.map do |spec|
+          "#{spec.name} (#{spec.version})"
+        end
+      else
+        missing_spec_names = materialized_dependencies.missing_specs.map(&:name).to_set
+        missing_specs = materialized_dependencies.missing_specs.map do |spec|
+          "#{spec.name} (#{spec.version})"
+        end
+        materialized_dependencies = materialized_dependencies.to_a.reject do |spec|
+          missing_spec_names.include?(spec.name)
+        end
       end
-      materialized_dependencies = materialized_dependencies.to_a.reject do |spec|
-        missing_spec_names.include?(spec.name)
-      end
+
       [materialized_dependencies, missing_specs]
     end
 
-    sig { returns(Bundler::Runtime) }
+    #: -> Bundler::Runtime
     def runtime
       Bundler::Runtime.new(File.dirname(gemfile.path), definition)
     end
 
-    sig { returns(T::Array[Symbol]) }
+    #: -> Array[Symbol]
     def groups
       definition.groups
     end
 
-    sig { returns(String) }
+    #: -> String
     def dir
       File.expand_path(gemfile.path + "/..")
     end
@@ -100,74 +109,68 @@ module Tapioca
       class << self
         extend T::Sig
 
-        sig { returns(T::Hash[String, Gemfile::GemSpec]) }
+        #: -> Hash[String, Gemfile::GemSpec]
         def spec_lookup_by_file_path
-          @lookup ||= T.let(
-            [*::Gem::Specification.default_stubs, *::Gem::Specification.stubs]
-              .map! { |spec| new(spec.to_spec) }
-              .flat_map do |spec|
-                spec.files.filter_map { |file| [file.realpath.to_s, spec] if file.exist? }
-              end.to_h,
-            T.nilable(T::Hash[String, Gemfile::GemSpec]),
-          )
+          @lookup ||= [*::Gem::Specification.default_stubs, *::Gem::Specification.stubs]
+            .map! { |spec| new(spec.to_spec) }
+            .flat_map do |spec|
+              spec.files.filter_map { |file| [file.realpath.to_s, spec] if file.exist? }
+            end.to_h #: Hash[String, Gemfile::GemSpec]?
         end
       end
 
-      IGNORED_GEMS = T.let(
-        [
-          "sorbet",
-          "sorbet-static",
-          "sorbet-runtime",
-          "sorbet-static-and-runtime",
-          "debug",
-          "irb",
-          "fakefs",
-        ].freeze,
-        T::Array[String],
-      )
+      IGNORED_GEMS = [
+        "sorbet",
+        "sorbet-static",
+        "sorbet-runtime",
+        "sorbet-static-and-runtime",
+        "debug",
+        "irb",
+        "fakefs",
+      ].freeze #: Array[String]
 
-      sig { returns(String) }
+      #: String
       attr_reader :full_gem_path, :version
 
-      sig { returns(T::Array[Pathname]) }
+      #: Array[Pathname]
       attr_reader :files
 
-      sig { params(spec: Spec).void }
+      #: (Spec spec) -> void
       def initialize(spec)
-        @spec = T.let(spec, Tapioca::Gemfile::Spec)
+        @spec = spec #: Tapioca::Gemfile::Spec
         real_gem_path = to_realpath(@spec.full_gem_path)
-        @full_gem_path = T.let(real_gem_path, String)
-        @version = T.let(version_string, String)
-        @exported_rbi_files = T.let(nil, T.nilable(T::Array[String]))
-        @files = T.let(collect_files, T::Array[Pathname])
+        @full_gem_path = real_gem_path #: String
+        @version = version_string #: String
+        @exported_rbi_files = nil #: Array[String]?
+        @files = collect_files #: Array[Pathname]
       end
 
-      sig { params(other: BasicObject).returns(T::Boolean) }
+      #: (BasicObject other) -> bool
       def ==(other)
         GemSpec === other && other.name == name && other.version == version
       end
 
-      sig { params(gemfile_dir: String).returns(T::Boolean) }
+      #: (String gemfile_dir) -> bool
       def ignore?(gemfile_dir)
         gem_ignored? || gem_in_app_dir?(gemfile_dir, full_gem_path)
       end
 
-      sig { returns(String) }
+      #: -> String
       def name
         @spec.name
       end
 
-      sig { returns(T::Array[::Gem::Dependency]) }
+      #: -> Array[::Gem::Dependency]
       def dependencies
         @spec.dependencies
       end
 
-      sig { returns(String) }
+      #: -> String
       def rbi_file_name
         "#{name}@#{version}.rbi"
       end
 
-      sig { params(path: String).returns(T::Boolean) }
+      #: (String path) -> bool
       def contains_path?(path)
         if default_gem?
           files.any? { |file| file.to_s == to_realpath(path) }
@@ -176,7 +179,7 @@ module Tapioca
         end
       end
 
-      sig { void }
+      #: -> void
       def parse_yard_docs
         files.each do |path|
           YARD.parse(path.to_s, [], Logger::Severity::FATAL)
@@ -192,17 +195,17 @@ module Tapioca
         end
       end
 
-      sig { returns(T::Array[String]) }
+      #: -> Array[String]
       def exported_rbi_files
         @exported_rbi_files ||= Dir.glob("#{full_gem_path}/rbi/**/*.rbi").sort
       end
 
-      sig { returns(T::Boolean) }
+      #: -> bool
       def export_rbi_files?
         exported_rbi_files.any?
       end
 
-      sig { returns(RBI::MergeTree) }
+      #: -> RBI::MergeTree
       def exported_rbi_tree
         rewriter = RBI::Rewriters::Merge.new(keep: RBI::Rewriters::Merge::Keep::NONE)
 
@@ -214,7 +217,7 @@ module Tapioca
         rewriter.tree
       end
 
-      sig { params(file: Pathname).returns(Pathname) }
+      #: (Pathname file) -> Pathname
       def relative_path_for(file)
         if default_gem?
           file.realpath.relative_path_from(RbConfig::CONFIG["rubylibdir"])
@@ -225,7 +228,7 @@ module Tapioca
 
       private
 
-      sig { returns(T::Array[Pathname]) }
+      #: -> Array[Pathname]
       def collect_files
         if default_gem?
           # `Bundler::RemoteSpecification` delegates missing methods to
@@ -240,24 +243,21 @@ module Tapioca
         end
       end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      #: -> bool?
       def default_gem?
         @spec.respond_to?(:default_gem?) && @spec.default_gem?
       end
 
-      sig { returns(Regexp) }
+      #: -> Regexp
       def require_paths_prefix_matcher
-        @require_paths_prefix_matcher ||= T.let(
-          begin
-            require_paths = T.unsafe(@spec).require_paths
-            prefix_matchers = require_paths.map { |rp| Regexp.new("^#{rp}/") }
-            Regexp.union(prefix_matchers)
-          end,
-          T.nilable(Regexp),
-        )
+        @require_paths_prefix_matcher ||= begin
+          require_paths = T.unsafe(@spec).require_paths
+          prefix_matchers = require_paths.map { |rp| Regexp.new("^#{rp}/") }
+          Regexp.union(prefix_matchers)
+        end #: Regexp?
       end
 
-      sig { params(file: String).returns(Pathname) }
+      #: (String file) -> Pathname
       def resolve_to_ruby_lib_dir(file)
         # We want to match require prefixes but fallback to an empty match
         # if none of the require prefixes actually match. This is so that
@@ -271,14 +271,14 @@ module Tapioca
         Pathname.new(file).expand_path
       end
 
-      sig { returns(String) }
+      #: -> String
       def version_string
         version = @spec.version.to_s
         version += "-#{@spec.source.revision}" if Bundler::Source::Git === @spec.source
         version
       end
 
-      sig { params(path: String).returns(T::Boolean) }
+      #: (String path) -> bool
       def has_parent_gemspec?(path)
         # For some Git installed gems the location of the loaded file can
         # be different from the gem path as indicated by the spec file
@@ -299,7 +299,7 @@ module Tapioca
         false
       end
 
-      sig { returns(T::Boolean) }
+      #: -> bool
       def gem_ignored?
         IGNORED_GEMS.include?(name)
       end

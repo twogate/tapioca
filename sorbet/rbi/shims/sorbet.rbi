@@ -54,7 +54,15 @@ module T::Private
       def finalized=(finalized); end
     end
   end
+
+  module DeclState
+    class << self
+      def current; end
+    end
+  end
 end
+
+class T::Types::AttachedClassType < T::Types::Base; end
 
 class T::Enum
   def values; end

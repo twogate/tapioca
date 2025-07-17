@@ -3,32 +3,12 @@
 
 module Tapioca
   module Commands
+    # @abstract
     class AbstractDsl < CommandWithoutTracker
       include SorbetHelper
       include RBIFilesHelper
 
-      abstract!
-
-      sig do
-        params(
-          requested_constants: T::Array[String],
-          requested_paths: T::Array[Pathname],
-          outpath: Pathname,
-          only: T::Array[String],
-          exclude: T::Array[String],
-          file_header: T::Boolean,
-          tapioca_path: String,
-          skip_constant: T::Array[String],
-          quiet: T::Boolean,
-          verbose: T::Boolean,
-          number_of_workers: T.nilable(Integer),
-          auto_strictness: T::Boolean,
-          gem_dir: String,
-          rbi_formatter: RBIFormatter,
-          app_root: String,
-          halt_upon_load_error: T::Boolean,
-        ).void
-      end
+      #: (requested_constants: Array[String], requested_paths: Array[Pathname], outpath: Pathname, only: Array[String], exclude: Array[String], file_header: bool, tapioca_path: String, ?skip_constant: Array[String], ?quiet: bool, ?verbose: bool, ?number_of_workers: Integer?, ?auto_strictness: bool, ?gem_dir: String, ?rbi_formatter: RBIFormatter, ?app_root: String, ?halt_upon_load_error: bool, ?compiler_options: Hash[String, untyped], ?lsp_addon: bool) -> void
       def initialize(
         requested_constants:,
         requested_paths:,
@@ -45,7 +25,9 @@ module Tapioca
         gem_dir: DEFAULT_GEM_DIR,
         rbi_formatter: DEFAULT_RBI_FORMATTER,
         app_root: ".",
-        halt_upon_load_error: true
+        halt_upon_load_error: true,
+        compiler_options: {},
+        lsp_addon: false
       )
         @requested_constants = requested_constants
         @requested_paths = requested_paths
@@ -63,14 +45,20 @@ module Tapioca
         @app_root = app_root
         @halt_upon_load_error = halt_upon_load_error
         @skip_constant = skip_constant
+        @compiler_options = compiler_options
+        @lsp_addon = lsp_addon
 
         super()
       end
 
       private
 
-      sig { params(outpath: Pathname, quiet: T::Boolean).returns(T::Set[Pathname]) }
+      #: (Pathname outpath, quiet: bool) -> Set[Pathname]
       def generate_dsl_rbi_files(outpath, quiet:)
+        if @lsp_addon
+          pipeline.active_compilers.each(&:reset_state)
+        end
+
         existing_rbi_files = existing_rbi_filenames(all_requested_constants)
 
         generated_files = pipeline.run do |constant, contents|
@@ -93,21 +81,21 @@ module Tapioca
         files_to_purge
       end
 
-      sig { returns(T::Array[String]) }
+      #: -> Array[String]
       def all_requested_constants
-        @all_requested_constants ||= T.let(
-          @requested_constants + constants_from_requested_paths,
-          T.nilable(T::Array[String]),
-        )
+        @all_requested_constants ||= @requested_constants + constants_from_requested_paths #: Array[String]?
       end
 
-      sig { returns(Tapioca::Dsl::Pipeline) }
+      #: -> Tapioca::Dsl::Pipeline
       def pipeline
-        @pipeline ||= T.let(create_pipeline, T.nilable(Tapioca::Dsl::Pipeline))
+        @pipeline ||= create_pipeline #: Tapioca::Dsl::Pipeline?
       end
 
-      sig { void }
+      #: -> void
       def load_application
+        # Loaded ahead of time when using the add-on to avoid reloading multiple times
+        return if @lsp_addon
+
         Loaders::Dsl.load_application(
           tapioca_path: @tapioca_path,
           eager_load: @requested_constants.empty? && @requested_paths.empty?,
@@ -116,23 +104,32 @@ module Tapioca
         )
       end
 
-      sig { returns(Tapioca::Dsl::Pipeline) }
+      #: -> Tapioca::Dsl::Pipeline
       def create_pipeline
+        error_handler = if @lsp_addon
+          ->(error) {
+            say(error)
+          }
+        else
+          ->(error) {
+            say_error(error, :bold, :red)
+          }
+        end
         Tapioca::Dsl::Pipeline.new(
           requested_constants:
             constantize(@requested_constants) + constantize(constants_from_requested_paths, ignore_missing: true),
           requested_paths: @requested_paths,
           requested_compilers: constantize_compilers(@only),
           excluded_compilers: constantize_compilers(@exclude),
-          error_handler: ->(error) {
-            say_error(error, :bold, :red)
-          },
+          error_handler: error_handler,
           skipped_constants: constantize(@skip_constant, ignore_missing: true),
           number_of_workers: @number_of_workers,
+          compiler_options: @compiler_options,
+          lsp_addon: @lsp_addon,
         )
       end
 
-      sig { params(requested_constants: T::Array[String], path: Pathname).returns(T::Set[Pathname]) }
+      #: (Array[String] requested_constants, ?path: Pathname) -> Set[Pathname]
       def existing_rbi_filenames(requested_constants, path: @outpath)
         filenames = if requested_constants.empty?
           Pathname.glob(path / "**/*.rbi")
@@ -146,7 +143,7 @@ module Tapioca
         filenames.to_set
       end
 
-      sig { params(constant_names: T::Array[String], ignore_missing: T::Boolean).returns(T::Array[Module]) }
+      #: (Array[String] constant_names, ?ignore_missing: bool) -> Array[Module]
       def constantize(constant_names, ignore_missing: false)
         constant_map = constant_names.to_h do |name|
           [name, Object.const_get(name)]
@@ -163,13 +160,15 @@ module Tapioca
             remove_file(filename) if File.file?(filename)
           end
 
-          raise Thor::Error, ""
+          raise Tapioca::Error, ""
         end
 
-        processable_constants.map { |_, constant| constant }
+        processable_constants
+          .map { |_, constant| constant }
+          .grep(Module)
       end
 
-      sig { params(compiler_names: T::Array[String]).returns(T::Array[T.class_of(Tapioca::Dsl::Compiler)]) }
+      #: (Array[String] compiler_names) -> Array[singleton(Tapioca::Dsl::Compiler)]
       def constantize_compilers(compiler_names)
         compiler_map = compiler_names.to_h do |name|
           [name, resolve(name)]
@@ -189,7 +188,7 @@ module Tapioca
         T.cast(compiler_map.values, T::Array[T.class_of(Tapioca::Dsl::Compiler)])
       end
 
-      sig { params(name: String).returns(T.nilable(T.class_of(Tapioca::Dsl::Compiler))) }
+      #: (String name) -> singleton(Tapioca::Dsl::Compiler)?
       def resolve(name)
         # Try to find built-in tapioca compiler first, then globally defined compiler.
         potentials = Tapioca::Dsl::Compilers::NAMESPACES.map do |namespace|
@@ -202,14 +201,7 @@ module Tapioca
         potentials.compact.first
       end
 
-      sig do
-        params(
-          constant_name: String,
-          rbi: RBI::File,
-          outpath: Pathname,
-          quiet: T::Boolean,
-        ).returns(T.nilable(Pathname))
-      end
+      #: (String constant_name, RBI::File rbi, ?outpath: Pathname, ?quiet: bool) -> Pathname?
       def compile_dsl_rbi(constant_name, rbi, outpath: @outpath, quiet: false)
         return if rbi.empty?
 
@@ -227,7 +219,7 @@ module Tapioca
         filename
       end
 
-      sig { params(dir: Pathname).void }
+      #: (Pathname dir) -> void
       def perform_dsl_verification(dir)
         diff = verify_dsl_rbi(tmp_dir: dir)
 
@@ -236,7 +228,7 @@ module Tapioca
         FileUtils.remove_entry(dir)
       end
 
-      sig { params(files: T::Set[Pathname]).void }
+      #: (Set[Pathname] files) -> void
       def purge_stale_dsl_rbi_files(files)
         if files.any?
           say("Removing stale RBI files...")
@@ -248,12 +240,12 @@ module Tapioca
         end
       end
 
-      sig { params(constant_name: String).returns(Pathname) }
+      #: (String constant_name) -> Pathname
       def dsl_rbi_filename(constant_name)
         @outpath / "#{underscore(constant_name)}.rbi"
       end
 
-      sig { params(tmp_dir: Pathname).returns(T::Hash[String, Symbol]) }
+      #: (tmp_dir: Pathname) -> Hash[String, Symbol]
       def verify_dsl_rbi(tmp_dir:)
         diff = {}
 
@@ -285,7 +277,7 @@ module Tapioca
         diff
       end
 
-      sig { params(cause: Symbol, files: T::Array[String]).returns(String) }
+      #: (Symbol cause, Array[String] files) -> String
       def build_error_for_files(cause, files)
         filenames = files.map do |file|
           @outpath / file
@@ -294,7 +286,7 @@ module Tapioca
         "  File(s) #{cause}:\n  - #{filenames}"
       end
 
-      sig { params(diff: T::Hash[String, Symbol], command: Symbol).void }
+      #: (Hash[String, Symbol] diff, Symbol command) -> void
       def report_diff_and_exit_if_out_of_date(diff, command)
         if diff.empty?
           say("Nothing to do, all RBIs are up-to-date.")
@@ -303,7 +295,7 @@ module Tapioca
             build_error_for_files(cause, diff_for_cause.map(&:first))
           end.join("\n")
 
-          raise Thor::Error, <<~ERROR
+          raise Tapioca::Error, <<~ERROR
             #{set_color("RBI files are out-of-date. In your development environment, please run:", :green)}
               #{set_color("`#{default_command(command)}`", :green, :bold)}
             #{set_color("Once it is complete, be sure to commit and push any changes", :green)}
@@ -316,14 +308,14 @@ module Tapioca
         end
       end
 
-      sig { params(path: Pathname).returns(T::Array[Pathname]) }
+      #: (Pathname path) -> Array[Pathname]
       def rbi_files_in(path)
         Pathname.glob(path / "**/*.rbi").map do |file|
           file.relative_path_from(path)
         end.sort
       end
 
-      sig { params(class_name: String).returns(String) }
+      #: (String class_name) -> String
       def underscore(class_name)
         return class_name unless /[A-Z-]|::/.match?(class_name)
 
@@ -335,22 +327,20 @@ module Tapioca
         word
       end
 
-      sig { params(constant: String).returns(String) }
+      #: (String constant) -> String
       def rbi_filename_for(constant)
         underscore(constant) + ".rbi"
       end
 
-      sig { params(constant: String).returns(String) }
+      #: (String constant) -> String
       def generate_command_for(constant)
         default_command(:dsl, constant)
       end
 
-      sig { returns(T::Array[String]) }
+      #: -> Array[String]
       def constants_from_requested_paths
-        @constants_from_requested_paths ||= T.let(
-          Static::SymbolLoader.symbols_from_paths(@requested_paths).to_a,
-          T.nilable(T::Array[String]),
-        )
+        @constants_from_requested_paths ||=
+          Static::SymbolLoader.symbols_from_paths(@requested_paths).to_a #: Array[String]?
       end
     end
   end

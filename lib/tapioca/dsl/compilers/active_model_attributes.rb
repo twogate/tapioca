@@ -34,14 +34,12 @@ module Tapioca
       #   def name=(name); end
       # end
       # ~~~
+      #: [ConstantType = (Class[::ActiveModel::Attributes] & ::ActiveModel::Attributes::ClassMethods)]
       class ActiveModelAttributes < Compiler
         extend T::Sig
 
-        ConstantType = type_member do
-          { fixed: T.all(T::Class[::ActiveModel::Attributes], ::ActiveModel::Attributes::ClassMethods) }
-        end
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           attribute_methods = attribute_methods_for_constant
           return if attribute_methods.empty?
@@ -56,7 +54,8 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             all_classes.grep(::ActiveModel::Attributes::ClassMethods)
           end
@@ -64,9 +63,9 @@ module Tapioca
 
         private
 
-        HANDLED_METHOD_TARGETS = T.let(["attribute", "attribute="], T::Array[String])
+        HANDLED_METHOD_TARGETS = ["attribute", "attribute="] #: Array[String]
 
-        sig { returns(T::Array[[::String, ::String]]) }
+        #: -> Array[[::String, ::String]]
         def attribute_methods_for_constant
           patterns = if constant.respond_to?(:attribute_method_patterns)
             # https://github.com/rails/rails/pull/44367
@@ -83,7 +82,7 @@ module Tapioca
           end
         end
 
-        sig { params(pattern: T.untyped).returns(T::Boolean) }
+        #: (untyped pattern) -> bool
         def handle_method_pattern?(pattern)
           target = if pattern.respond_to?(:method_missing_target)
             # Pre-Rails 6.0, the field is named "method_missing_target"
@@ -99,31 +98,31 @@ module Tapioca
           HANDLED_METHOD_TARGETS.include?(target.to_s)
         end
 
-        sig { params(attribute_type_value: T.untyped).returns(::String) }
+        #: (untyped attribute_type_value) -> ::String
         def type_for(attribute_type_value)
-          type = case attribute_type_value
+          case attribute_type_value
           when ActiveModel::Type::Boolean
-            "T::Boolean"
+            as_nilable_type("T::Boolean")
           when ActiveModel::Type::Date
-            "::Date"
+            as_nilable_type("::Date")
           when ActiveModel::Type::DateTime, ActiveModel::Type::Time
-            "::Time"
+            as_nilable_type("::Time")
           when ActiveModel::Type::Decimal
-            "::BigDecimal"
+            as_nilable_type("::BigDecimal")
           when ActiveModel::Type::Float
-            "::Float"
+            as_nilable_type("::Float")
           when ActiveModel::Type::Integer
-            "::Integer"
+            as_nilable_type("::Integer")
           when ActiveModel::Type::String
-            "::String"
+            as_nilable_type("::String")
           else
-            Helpers::ActiveModelTypeHelper.type_for(attribute_type_value)
+            type = Helpers::ActiveModelTypeHelper.type_for(attribute_type_value)
+            type = as_nilable_type(type) if Helpers::ActiveModelTypeHelper.assume_nilable?(attribute_type_value)
+            type
           end
-
-          as_nilable_type(type)
         end
 
-        sig { params(klass: RBI::Scope, method: String, type: String).void }
+        #: (RBI::Scope klass, String method, String type) -> void
         def generate_method(klass, method, type)
           if method.end_with?("=")
             parameter = create_param("value", type: type)

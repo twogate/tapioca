@@ -9,35 +9,42 @@ module Tapioca
 
         private
 
-        sig { override.params(event: ConstNodeAdded).void }
+        # @override
+        #: (ConstNodeAdded event) -> void
         def on_const(event)
           file, line = Object.const_source_location(event.symbol)
           add_source_location_comment(event.node, file, line)
         end
 
-        sig { override.params(event: ScopeNodeAdded).void }
+        # @override
+        #: (ScopeNodeAdded event) -> void
         def on_scope(event)
           # Instead of using `const_source_location`, which always reports the first place where a constant is defined,
           # we filter the locations tracked by ConstantDefinition. This allows us to provide the correct location for
           # constants that are defined by multiple gems.
           locations = Runtime::Trackers::ConstantDefinition.locations_for(event.constant)
           location = locations.find do |loc|
-            Pathname.new(loc.path).realpath.to_s.include?(@pipeline.gem.full_gem_path)
+            Pathname.new(loc.file).realpath.to_s.include?(@pipeline.gem.full_gem_path)
           end
 
           # The location may still be nil in some situations, like constant aliases (e.g.: MyAlias = OtherConst). These
           # are quite difficult to attribute a correct location, given that the source location points to the original
           # constants and not the alias
-          add_source_location_comment(event.node, location.path, location.lineno) unless location.nil?
+          add_source_location_comment(event.node, location.file, location.line) unless location.nil?
         end
 
-        sig { override.params(event: MethodNodeAdded).void }
+        # @override
+        #: (MethodNodeAdded event) -> void
         def on_method(event)
-          file, line = event.method.source_location
-          add_source_location_comment(event.node, file, line)
+          definition = @pipeline.method_definition_in_gem(event.method.name, event.constant)
+
+          if Pipeline::MethodInGemWithLocation === definition
+            loc = definition.location
+            add_source_location_comment(event.node, loc.file, loc.line)
+          end
         end
 
-        sig { params(node: RBI::NodeWithComments, file: T.nilable(String), line: T.nilable(Integer)).void }
+        #: (RBI::NodeWithComments node, String? file, Integer? line) -> void
         def add_source_location_comment(node, file, line)
           return unless file && line
 
@@ -57,7 +64,7 @@ module Tapioca
           # we can clear the gem version if the gem is the same one we are processing
           version = "" if gem == @pipeline.gem
 
-          uri = URI::Source.build(
+          uri = SourceURI.build(
             gem_name: gem.name,
             gem_version: version,
             path: path.to_s,

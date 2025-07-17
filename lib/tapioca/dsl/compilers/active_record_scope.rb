@@ -38,13 +38,13 @@ module Tapioca
       #   end
       # end
       # ~~~
+      #: [ConstantType = singleton(::ActiveRecord::Base)]
       class ActiveRecordScope < Compiler
         extend T::Sig
         include Helpers::ActiveRecordConstantsHelper
 
-        ConstantType = type_member { { fixed: T.class_of(::ActiveRecord::Base) } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           method_names = scope_method_names
 
@@ -77,7 +77,8 @@ module Tapioca
         end
 
         class << self
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             descendants_of(::ActiveRecord::Base).reject(&:abstract_class?)
           end
@@ -85,9 +86,9 @@ module Tapioca
 
         private
 
-        sig { returns(T::Array[Symbol]) }
+        #: -> Array[Symbol]
         def scope_method_names
-          scope_methods = T.let([], T::Array[Symbol])
+          scope_methods = [] #: Array[Symbol]
           constant = self.constant
 
           # Keep gathering scope methods until we hit "ActiveRecord::Base"
@@ -104,13 +105,7 @@ module Tapioca
           scope_methods.uniq
         end
 
-        sig do
-          params(
-            mod: RBI::Scope,
-            scope_method: String,
-            return_type: String,
-          ).void
-        end
+        #: (RBI::Scope mod, String scope_method, String return_type) -> void
         def generate_scope_method(mod, scope_method, return_type)
           mod.create_method(
             scope_method,

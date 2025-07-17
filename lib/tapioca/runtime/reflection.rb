@@ -1,6 +1,8 @@
 # typed: strict
 # frozen_string_literal: true
 
+require "tapioca/runtime/source_location"
+
 # On Ruby 3.2 or newer, Class defines an attached_object method that returns the
 # attached class of a singleton class without iterating ObjectSpace. On older
 # versions of Ruby, we fall back to iterating ObjectSpace.
@@ -18,97 +20,93 @@ module Tapioca
       extend T::Sig
       extend self
 
-      CLASS_METHOD = T.let(Kernel.instance_method(:class), UnboundMethod)
-      CONSTANTS_METHOD = T.let(Module.instance_method(:constants), UnboundMethod)
-      NAME_METHOD = T.let(Module.instance_method(:name), UnboundMethod)
-      SINGLETON_CLASS_METHOD = T.let(Object.instance_method(:singleton_class), UnboundMethod)
-      ANCESTORS_METHOD = T.let(Module.instance_method(:ancestors), UnboundMethod)
-      SUPERCLASS_METHOD = T.let(Class.instance_method(:superclass), UnboundMethod)
-      OBJECT_ID_METHOD = T.let(BasicObject.instance_method(:__id__), UnboundMethod)
-      EQUAL_METHOD = T.let(BasicObject.instance_method(:equal?), UnboundMethod)
-      PUBLIC_INSTANCE_METHODS_METHOD = T.let(Module.instance_method(:public_instance_methods), UnboundMethod)
-      PROTECTED_INSTANCE_METHODS_METHOD = T.let(Module.instance_method(:protected_instance_methods), UnboundMethod)
-      PRIVATE_INSTANCE_METHODS_METHOD = T.let(Module.instance_method(:private_instance_methods), UnboundMethod)
-      METHOD_METHOD = T.let(Kernel.instance_method(:method), UnboundMethod)
-      UNDEFINED_CONSTANT = T.let(Module.new.freeze, Module)
+      CLASS_METHOD = Kernel.instance_method(:class) #: UnboundMethod
+      CONSTANTS_METHOD = Module.instance_method(:constants) #: UnboundMethod
+      NAME_METHOD = Module.instance_method(:name) #: UnboundMethod
+      SINGLETON_CLASS_METHOD = Object.instance_method(:singleton_class) #: UnboundMethod
+      ANCESTORS_METHOD = Module.instance_method(:ancestors) #: UnboundMethod
+      SUPERCLASS_METHOD = Class.instance_method(:superclass) #: UnboundMethod
+      OBJECT_ID_METHOD = BasicObject.instance_method(:__id__) #: UnboundMethod
+      EQUAL_METHOD = BasicObject.instance_method(:equal?) #: UnboundMethod
+      PUBLIC_INSTANCE_METHODS_METHOD = Module.instance_method(:public_instance_methods) #: UnboundMethod
+      PROTECTED_INSTANCE_METHODS_METHOD = Module.instance_method(:protected_instance_methods) #: UnboundMethod
+      PRIVATE_INSTANCE_METHODS_METHOD = Module.instance_method(:private_instance_methods) #: UnboundMethod
+      METHOD_METHOD = Kernel.instance_method(:method) #: UnboundMethod
+      UNDEFINED_CONSTANT = Module.new.freeze #: Module
 
-      REQUIRED_FROM_LABELS = T.let(["<top (required)>", "<main>"].freeze, T::Array[String])
+      REQUIRED_FROM_LABELS = ["<top (required)>", "<main>", "<compiled>"].freeze #: Array[String]
 
-      T::Sig::WithoutRuntime.sig { params(constant: BasicObject).returns(T::Boolean) }
+      # @without_runtime
+      #: (BasicObject constant) -> bool
       def constant_defined?(constant)
         !UNDEFINED_CONSTANT.eql?(constant)
       end
 
-      sig do
-        params(
-          symbol: String,
-          inherit: T::Boolean,
-          namespace: Module,
-        ).returns(BasicObject).checked(:never)
-      end
+      # @without_runtime
+      #: (String symbol, ?inherit: bool, ?namespace: Module) -> BasicObject
       def constantize(symbol, inherit: false, namespace: Object)
         namespace.const_get(symbol, inherit)
       rescue NameError, LoadError, RuntimeError, ArgumentError, TypeError
         UNDEFINED_CONSTANT
       end
 
-      sig { params(object: BasicObject).returns(T::Class[T.anything]).checked(:never) }
+      #: (BasicObject object) -> Class[top]
       def class_of(object)
         CLASS_METHOD.bind_call(object)
       end
 
-      sig { params(constant: Module).returns(T::Array[Symbol]) }
+      #: (Module constant) -> Array[Symbol]
       def constants_of(constant)
         CONSTANTS_METHOD.bind_call(constant, false)
       end
 
-      sig { params(constant: Module).returns(T.nilable(String)) }
+      #: (Module constant) -> String?
       def name_of(constant)
         name = NAME_METHOD.bind_call(constant)
         name&.start_with?("#<") ? nil : name
       end
 
-      sig { params(constant: Module).returns(T::Class[T.anything]) }
+      #: (Module constant) -> Class[top]
       def singleton_class_of(constant)
         SINGLETON_CLASS_METHOD.bind_call(constant)
       end
 
-      sig { params(constant: Module).returns(T::Array[Module]) }
+      #: (Module constant) -> Array[Module]
       def ancestors_of(constant)
         ANCESTORS_METHOD.bind_call(constant)
       end
 
-      sig { params(constant: T::Class[T.anything]).returns(T.nilable(T::Class[T.anything])) }
+      #: (Class[top] constant) -> Class[top]?
       def superclass_of(constant)
         SUPERCLASS_METHOD.bind_call(constant)
       end
 
-      sig { params(object: BasicObject).returns(Integer).checked(:never) }
+      #: (BasicObject object) -> Integer
       def object_id_of(object)
         OBJECT_ID_METHOD.bind_call(object)
       end
 
-      sig { params(object: BasicObject, other: BasicObject).returns(T::Boolean).checked(:never) }
+      #: (BasicObject object, BasicObject other) -> bool
       def are_equal?(object, other)
         EQUAL_METHOD.bind_call(object, other)
       end
 
-      sig { params(constant: Module).returns(T::Array[Symbol]) }
+      #: (Module constant) -> Array[Symbol]
       def public_instance_methods_of(constant)
         PUBLIC_INSTANCE_METHODS_METHOD.bind_call(constant)
       end
 
-      sig { params(constant: Module).returns(T::Array[Symbol]) }
+      #: (Module constant) -> Array[Symbol]
       def protected_instance_methods_of(constant)
         PROTECTED_INSTANCE_METHODS_METHOD.bind_call(constant)
       end
 
-      sig { params(constant: Module).returns(T::Array[Symbol]) }
+      #: (Module constant) -> Array[Symbol]
       def private_instance_methods_of(constant)
         PRIVATE_INSTANCE_METHODS_METHOD.bind_call(constant)
       end
 
-      sig { params(constant: Module).returns(T::Array[Module]) }
+      #: (Module constant) -> Array[Module]
       def inherited_ancestors_of(constant)
         if Class === constant
           ancestors_of(superclass_of(constant) || Object)
@@ -117,7 +115,7 @@ module Tapioca
         end
       end
 
-      sig { params(constant: Module).returns(T.nilable(String)) }
+      #: (Module constant) -> String?
       def qualified_name_of(constant)
         name = name_of(constant)
         return if name.nil?
@@ -129,19 +127,28 @@ module Tapioca
         end
       end
 
-      sig { params(method: T.any(UnboundMethod, Method)).returns(T.untyped) }
-      def signature_of(method)
+      SignatureBlockError = Class.new(Tapioca::Error)
+
+      #: ((UnboundMethod | Method) method) -> untyped
+      def signature_of!(method)
         T::Utils.signature_for_method(method)
       rescue LoadError, StandardError
+        Kernel.raise SignatureBlockError
+      end
+
+      #: ((UnboundMethod | Method) method) -> untyped
+      def signature_of(method)
+        signature_of!(method)
+      rescue SignatureBlockError
         nil
       end
 
-      sig { params(type: T::Types::Base).returns(String) }
+      #: (T::Types::Base type) -> String
       def name_of_type(type)
-        type.to_s.gsub(/\bAttachedClass\b/, "T.attached_class")
+        type.to_s
       end
 
-      sig { params(constant: Module, method: Symbol).returns(Method) }
+      #: (Module constant, Symbol method) -> Method
       def method_of(constant, method)
         METHOD_METHOD.bind_call(constant, method)
       end
@@ -159,58 +166,83 @@ module Tapioca
       #
       #   class D < C; end
       #   descendants_of(C) # => [B, A, D]
-      sig do
-        type_parameters(:U)
-          .params(klass: T.all(T::Class[T.anything], T.type_parameter(:U)))
-          .returns(T::Array[T.type_parameter(:U)])
-      end
+      #: [U] ((Class[top] & U) klass) -> Array[U]
       def descendants_of(klass)
         result = ObjectSpace.each_object(klass.singleton_class).reject do |k|
-          T.cast(k, Module).singleton_class? || T.unsafe(k) == klass
+          k.singleton_class? || k == klass
         end
 
         T.unsafe(result)
       end
 
-      # Examines the call stack to identify the closest location where a "require" is performed
-      # by searching for the label "<top (required)>". If none is found, it returns the location
-      # labeled "<main>", which is the original call site.
-      sig { params(locations: T.nilable(T::Array[Thread::Backtrace::Location])).returns(String) }
-      def resolve_loc(locations)
-        return "" unless locations
+      #: ((String | Symbol) constant_name) -> SourceLocation?
+      def const_source_location(constant_name)
+        return unless Object.respond_to?(:const_source_location)
 
-        resolved_loc = locations.find { |loc| REQUIRED_FROM_LABELS.include?(loc.label) }
-        return "" unless resolved_loc
+        file, line = Object.const_source_location(constant_name)
 
-        resolved_loc.absolute_path || ""
+        SourceLocation.from_loc([file, line]) if file && line
       end
 
-      sig { params(constant: Module).returns(T::Set[String]) }
+      # Examines the call stack to identify the closest location where a "require" is performed
+      # by searching for the label "<top (required)>" or "block in <class:...>" in the
+      # case of an ActiveSupport.on_load hook. If none is found, it returns the location
+      # labeled "<main>", which is the original call site.
+      #: (Array[Thread::Backtrace::Location]? locations) -> SourceLocation?
+      def resolve_loc(locations)
+        return unless locations
+
+        # Find the location of the closest file load, which should give us the location of the file that
+        # triggered the definition.
+        resolved_loc = locations.find do |loc|
+          label = loc.label
+          next unless label
+
+          REQUIRED_FROM_LABELS.include?(label) || label.start_with?("block in <class:")
+        end
+        return unless resolved_loc
+
+        resolved_loc_path = resolved_loc.absolute_path || resolved_loc.path
+
+        # Find the location of the last frame in this file to get the most accurate line number.
+        resolved_loc = locations.find { |loc| loc.absolute_path == resolved_loc_path }
+        return unless resolved_loc
+
+        # If the last operation was a `require`, and we have no more frames,
+        # we are probably dealing with a C-method.
+        return if locations.first&.label == "require"
+
+        file = resolved_loc.absolute_path || resolved_loc.path || ""
+
+        SourceLocation.from_loc([file, resolved_loc.lineno])
+      end
+
+      #: (Module constant) -> Set[String]
       def file_candidates_for(constant)
         relevant_methods_for(constant).filter_map do |method|
           method.source_location&.first
         end.to_set
       end
 
-      sig { params(constant: Module).returns(T.untyped) }
+      #: (Module constant) -> untyped
       def abstract_type_of(constant)
         T::Private::Abstract::Data.get(constant, :abstract_type) ||
           T::Private::Abstract::Data.get(singleton_class_of(constant), :abstract_type)
       end
 
-      sig { params(constant: Module).returns(T::Boolean) }
+      #: (Module constant) -> bool
       def final_module?(constant)
         T::Private::Final.final_module?(constant)
       end
 
-      sig { params(constant: Module).returns(T::Boolean) }
+      #: (Module constant) -> bool
       def sealed_module?(constant)
         T::Private::Sealed.sealed_module?(constant)
       end
 
       private
 
-      sig { params(constant: Module).returns(T::Array[UnboundMethod]) }
+      #: (Module constant) -> Array[UnboundMethod]
       def relevant_methods_for(constant)
         methods = methods_for(constant).select(&:source_location)
           .reject { |x| method_defined_by_forwardable_module?(x) }
@@ -226,7 +258,7 @@ module Tapioca
         end
       end
 
-      sig { params(constant: Module).returns(T::Array[UnboundMethod]) }
+      #: (Module constant) -> Array[UnboundMethod]
       def methods_for(constant)
         modules = [constant, singleton_class_of(constant)]
         method_list_methods = [
@@ -240,7 +272,7 @@ module Tapioca
         end
       end
 
-      sig { params(parent: Module, name: String).returns(T.nilable(Module)) }
+      #: (Module parent, String name) -> Module?
       def child_module_for_parent_with_name(parent, name)
         return if parent.autoload?(name)
 
@@ -251,12 +283,12 @@ module Tapioca
         child
       end
 
-      sig { params(method: UnboundMethod).returns(T::Boolean) }
+      #: (UnboundMethod method) -> bool
       def method_defined_by_forwardable_module?(method)
         method.source_location&.first == Object.const_source_location(:Forwardable)&.first
       end
 
-      sig { params(name: String).returns(T::Boolean) }
+      #: (String name) -> bool
       def has_aliased_namespace?(name)
         name_parts = name.split("::")
         name_parts.pop # drop the constant name, leaving just the namespace

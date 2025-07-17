@@ -79,12 +79,12 @@ module Tapioca
       #   end
       # end
       # ~~~
+      #: [ConstantType = singleton(::JsonApiClient::Resource)]
       class JsonApiClientResource < Compiler
         extend T::Sig
 
-        ConstantType = type_member { { fixed: T.class_of(::JsonApiClient::Resource) } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           schema = resource_schema
           return if schema.nil? && constant.associations.empty?
@@ -108,17 +108,18 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             all_modules.select do |c|
-              name_of(c) && c < ::JsonApiClient::Resource
+              name_of(c) && ::JsonApiClient::Resource > c
             end
           end
         end
 
         private
 
-        sig { returns(T.nilable(::JsonApiClient::Schema)) }
+        #: -> ::JsonApiClient::Schema?
         def resource_schema
           schema = constant.schema
 
@@ -126,12 +127,7 @@ module Tapioca
           schema if schema.size > 0 # rubocop:disable Style/ZeroLengthPredicate
         end
 
-        sig do
-          params(
-            mod: RBI::Scope,
-            property: ::JsonApiClient::Schema::Property,
-          ).void
-        end
+        #: (RBI::Scope mod, ::JsonApiClient::Schema::Property property) -> void
         def generate_methods_for_property(mod, property)
           type = type_for(property)
 
@@ -141,13 +137,23 @@ module Tapioca
           mod.create_method("#{name}=", parameters: [create_param(name, type: type)], return_type: type)
         end
 
-        sig { params(property: ::JsonApiClient::Schema::Property).returns(String) }
+        #: (::JsonApiClient::Schema::Property property) -> String
         def type_for(property)
           type = ::JsonApiClient::Schema::TypeFactory.type_for(property.type)
           return "T.untyped" if type.nil?
 
           sorbet_type = if type.respond_to?(:sorbet_type)
+            line, file = type.method(:sorbet_type).source_location
+
+            $stderr.puts <<~MESSAGE
+              WARNING: `#sorbet_type` is deprecated. Please rename your method to `#__tapioca_type`."
+
+              Defined on line #{line} of #{file}
+            MESSAGE
+
             type.sorbet_type
+          elsif type.respond_to?(:__tapioca_type)
+            type.__tapioca_type
           elsif type == ::JsonApiClient::Schema::Types::Integer
             "::Integer"
           elsif type == ::JsonApiClient::Schema::Types::String
@@ -171,12 +177,7 @@ module Tapioca
           end
         end
 
-        sig do
-          params(
-            mod: RBI::Scope,
-            association: JsonApiClient::Associations::BaseAssociation,
-          ).void
-        end
+        #: (RBI::Scope mod, JsonApiClient::Associations::BaseAssociation association) -> void
         def generate_methods_for_association(mod, association)
           # If the association is broken, it will raise a NameError when trying to access the association_class
           klass = association.association_class

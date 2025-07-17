@@ -55,17 +55,14 @@ module Tapioca
       #   def fetch_by_title_and_review_date(title, review_date, includes: nil); end
       # end
       # ~~~
+      #: [ConstantType = singleton(::ActiveRecord::Base)]
       class IdentityCache < Compiler
         extend T::Sig
 
-        COLLECTION_TYPE = T.let(
-          ->(type) { "T::Array[::#{type}]" },
-          T.proc.params(type: T.any(Module, String)).returns(String),
-        )
+        COLLECTION_TYPE = ->(type) { "T::Array[::#{type}]" } #: ^((Module | String) type) -> String
 
-        ConstantType = type_member { { fixed: T.class_of(::ActiveRecord::Base) } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           caches = constant.send(:all_cached_associations)
           cache_indexes = constant.send(:cache_indexes)
@@ -97,22 +94,18 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             descendants_of(::ActiveRecord::Base).select do |klass|
-              klass < ::IdentityCache::WithoutPrimaryIndex
+              ::IdentityCache::WithoutPrimaryIndex > klass
             end
           end
         end
 
         private
 
-        sig do
-          params(
-            field: T.untyped,
-            returns_collection: T::Boolean,
-          ).returns(String)
-        end
+        #: (untyped field, returns_collection: bool) -> String
         def type_for_field(field, returns_collection:)
           cache_type = field.reflection.compute_class(field.reflection.class_name)
           if returns_collection
@@ -124,13 +117,7 @@ module Tapioca
           "T.untyped"
         end
 
-        sig do
-          params(
-            field: T.untyped,
-            klass: RBI::Scope,
-            returns_collection: T::Boolean,
-          ).void
-        end
+        #: (untyped field, RBI::Scope klass, returns_collection: bool) -> void
         def create_fetch_field_methods(field, klass, returns_collection:)
           name = field.cached_accessor_name.to_s
           type = type_for_field(field, returns_collection: returns_collection)
@@ -143,12 +130,7 @@ module Tapioca
           end
         end
 
-        sig do
-          params(
-            field: T.untyped,
-            klass: RBI::Scope,
-          ).void
-        end
+        #: (untyped field, RBI::Scope klass) -> void
         def create_fetch_by_methods(field, klass)
           is_cache_index = field.instance_variable_defined?(:@attribute_proc)
 
@@ -159,12 +141,7 @@ module Tapioca
           create_index_fetch_by_methods(field, klass) if is_cache_index
         end
 
-        sig do
-          params(
-            field: T.untyped,
-            klass: RBI::Scope,
-          ).void
-        end
+        #: (untyped field, RBI::Scope klass) -> void
         def create_index_fetch_by_methods(field, klass)
           fields_name = field.key_fields.join("_and_")
           name = "fetch_by_#{fields_name}"
@@ -209,14 +186,12 @@ module Tapioca
           )
         end
 
-        sig do
-          params(
-            field: T.untyped,
-            klass: RBI::Scope,
-          ).void
-        end
+        #: (untyped field, RBI::Scope klass) -> void
         def create_aliased_fetch_by_methods(field, klass)
-          type, _ = Helpers::ActiveRecordColumnTypeHelper.new(constant).type_for(field.alias_name.to_s)
+          type, _ = Helpers::ActiveRecordColumnTypeHelper.new(
+            constant,
+            column_type_option: Helpers::ActiveRecordColumnTypeHelper::ColumnTypeOption::Nilable,
+          ).type_for(field.alias_name.to_s)
           multi_type = type.delete_prefix("T.nilable(").delete_suffix(")").delete_prefix("::")
           suffix = field.send(:fetch_method_suffix)
 
@@ -228,7 +203,7 @@ module Tapioca
             "fetch_#{suffix}",
             class_method: true,
             parameters: parameters,
-            return_type: type,
+            return_type: field.unique ? type : COLLECTION_TYPE.call(type),
           )
 
           klass.create_method(

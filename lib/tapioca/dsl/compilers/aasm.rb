@@ -32,46 +32,45 @@ module Tapioca
       #   sleeping?, running?, cleaning?
       #   run, run!, run_without_validation!, may_run?
       #
+      #: [ConstantType = (Class[::AASM] & ::AASM::ClassMethods)]
       class AASM < Compiler
         extend T::Sig
 
         # Taken directly from the AASM::Core::Event class, here:
         # https://github.com/aasm/aasm/blob/0e03746/lib/aasm/core/event.rb#L21-L29
-        EVENT_CALLBACKS =
-          T.let(
-            [
-              "after",
-              "after_commit",
-              "after_transaction",
-              "before",
-              "before_transaction",
-              "ensure",
-              "error",
-              "before_success",
-              "success",
-            ].freeze,
-            T::Array[String],
-          )
+        EVENT_CALLBACKS = [
+          "after",
+          "after_commit",
+          "after_transaction",
+          "before",
+          "before_transaction",
+          "ensure",
+          "error",
+          "before_success",
+          "success",
+        ].freeze #: Array[String]
 
         # Taken directly from the AASM::Base class, here:
         # https://github.com/aasm/aasm/blob/0e03746a2b86558ee1bf7bd7db873938cbb3b29b/lib/aasm/base.rb#L145-L171
-        GLOBAL_CALLBACKS =
-          T.let(
-            [
-              "after_all_transitions",
-              "after_all_transactions",
-              "before_all_transactions",
-              "before_all_events",
-              "after_all_events",
-              "error_on_all_events",
-              "ensure_on_all_events",
-            ].freeze,
-            T::Array[String],
-          )
+        GLOBAL_CALLBACKS = [
+          "after_all_transitions",
+          "after_all_transactions",
+          "before_all_transactions",
+          "before_all_events",
+          "after_all_events",
+          "error_on_all_events",
+          "ensure_on_all_events",
+        ].freeze #: Array[String]
 
-        ConstantType = type_member { { fixed: T.all(T::Class[::AASM], ::AASM::ClassMethods) } }
+        TRANSITION_CALLBACKS = [
+          "on_transition",
+          "guard",
+          "after",
+          "success",
+        ].freeze #: Array[String]
 
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           state_machine_store = ::AASM::StateMachineStore.fetch(constant)
           return unless state_machine_store
@@ -147,7 +146,7 @@ module Tapioca
                 machine.create_method(
                   method,
                   parameters: [
-                    create_opt_param("symbol", type: "T.nilable(Symbol)", default: "nil"),
+                    create_rest_param("callbacks", type: "T.any(String, Symbol, T::Class[T.anything], Proc)"),
                     create_block_param("block", type: "T.nilable(T.proc.bind(#{constant_name}).void)"),
                   ],
                 )
@@ -162,8 +161,37 @@ module Tapioca
                     method,
                     parameters: [
                       create_opt_param("symbol", type: "T.nilable(Symbol)", default: "nil"),
-                      create_block_param("block", type: "T.nilable(T.proc.bind(#{constant_name}).void)"),
+                      create_block_param(
+                        "block",
+                        type: "T.nilable(T.proc.bind(#{constant_name}).params(opts: T.untyped).void)",
+                      ),
                     ],
+                  )
+                end
+
+                event.create_method(
+                  "transitions",
+                  parameters: [
+                    create_opt_param("definitions", default: "nil", type: "T.untyped"),
+                    create_block_param("block", type: "T.nilable(T.proc.bind(PrivateAASMTransition).void)"),
+                  ],
+                )
+              end
+
+              machine.create_class("PrivateAASMTransition", superclass_name: "AASM::Core::Transition") do |transition|
+                TRANSITION_CALLBACKS.each do |method|
+                  return_type = "T.untyped"
+                  return_type = "T::Boolean" if method == "guard"
+
+                  transition.create_method(
+                    method,
+                    parameters: [
+                      create_block_param(
+                        "block",
+                        type: "T.nilable(T.proc.bind(#{constant_name}).params(opts: T.untyped).void)",
+                      ),
+                    ],
+                    return_type: return_type,
                   )
                 end
               end
@@ -174,7 +202,8 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             T.cast(ObjectSpace.each_object(::AASM::ClassMethods), T::Enumerable[Module])
           end

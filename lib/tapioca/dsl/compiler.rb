@@ -3,81 +3,106 @@
 
 module Tapioca
   module Dsl
+    # @abstract
+    #: [ConstantType < Module]
     class Compiler
       extend T::Sig
-      extend T::Helpers
-      extend T::Generic
 
       include RBIHelper
       include Runtime::Reflection
       extend Runtime::Reflection
 
-      ConstantType = type_member { { upper: Module } }
-
-      abstract!
-
-      sig { returns(ConstantType) }
+      #: ConstantType
       attr_reader :constant
 
-      sig { returns(RBI::Tree) }
+      #: RBI::Tree
       attr_reader :root
+
+      #: Hash[String, untyped]
+      attr_reader :options
+
+      @@requested_constants = [] #: Array[Module] # rubocop:disable Style/ClassVars
 
       class << self
         extend T::Sig
 
-        sig { params(constant: Module).returns(T::Boolean) }
+        #: (Module constant) -> bool
         def handles?(constant)
           processable_constants.include?(constant)
         end
 
-        sig { abstract.returns(T::Enumerable[Module]) }
-        def gather_constants; end
+        # @abstract
+        #: -> T::Enumerable[Module]
+        def gather_constants = raise NotImplementedError, "Abstract method called"
 
-        sig { returns(T::Set[Module]) }
+        #: -> Set[Module]
         def processable_constants
-          @processable_constants ||= T.let(
-            T::Set[Module].new.compare_by_identity.merge(gather_constants),
-            T.nilable(T::Set[Module]),
-          )
+          @processable_constants ||= T::Set[Module].new.compare_by_identity.merge(gather_constants) #: Set[Module]?
+        end
+
+        #: (Array[Module] constants) -> void
+        def requested_constants=(constants)
+          @@requested_constants = constants # rubocop:disable Style/ClassVars
+        end
+
+        #: -> void
+        def reset_state
+          @processable_constants = nil
+          @all_classes = nil
+          @all_modules = nil
         end
 
         private
 
-        sig { returns(T::Enumerable[T::Class[T.anything]]) }
-        def all_classes
-          @all_classes ||= T.let(
-            T.cast(ObjectSpace.each_object(Class), T::Enumerable[T::Class[T.anything]]).each,
-            T.nilable(T::Enumerable[T::Class[T.anything]]),
-          )
+        #: [U] ((Class[top] & U) klass) -> Array[U]
+        def descendants_of(klass)
+          if @@requested_constants.any?
+            T.cast(
+              @@requested_constants.select do |k|
+                k < klass && !k.singleton_class?
+              end,
+              T::Array[T.type_parameter(:U)],
+            )
+          else
+            super
+          end
         end
 
-        sig { returns(T::Enumerable[Module]) }
+        #: -> T::Enumerable[Class[top]]
+        def all_classes
+          @all_classes ||= all_modules.grep(Class).freeze #: T::Enumerable[Class[top]]?
+        end
+
+        #: -> T::Enumerable[Module]
         def all_modules
-          @all_modules ||= T.let(
-            T.cast(ObjectSpace.each_object(Module), T::Enumerable[Module]).each,
-            T.nilable(T::Enumerable[Module]),
-          )
+          @all_modules ||= if @@requested_constants.any?
+            @@requested_constants.grep(Module)
+          else
+            ObjectSpace.each_object(Module).to_a
+          end.freeze #: T::Enumerable[Module]?
         end
       end
 
-      sig { params(pipeline: Tapioca::Dsl::Pipeline, root: RBI::Tree, constant: ConstantType).void }
-      def initialize(pipeline, root, constant)
+      #: (Tapioca::Dsl::Pipeline pipeline, RBI::Tree root, ConstantType constant, ?Hash[String, untyped] options) -> void
+      def initialize(pipeline, root, constant, options = {})
         @pipeline = pipeline
         @root = root
         @constant = constant
-        @errors = T.let([], T::Array[String])
+        @options = options
+        @errors = [] #: Array[String]
       end
 
-      sig { params(compiler_name: String).returns(T::Boolean) }
+      #: (String compiler_name) -> bool
       def compiler_enabled?(compiler_name)
         @pipeline.compiler_enabled?(compiler_name)
       end
 
-      sig { abstract.void }
-      def decorate; end
+      # @abstract
+      #: -> void
+      def decorate = raise NotImplementedError, "Abstract method called"
 
       # NOTE: This should eventually accept an `Error` object or `Exception` rather than simply a `String`.
-      sig { params(error: String).void }
+      #: (String error) -> void
       def add_error(error)
         @pipeline.add_error(error)
       end
@@ -85,14 +110,9 @@ module Tapioca
       private
 
       # Get the types of each parameter from a method signature
-      sig do
-        params(
-          method_def: T.any(Method, UnboundMethod),
-          signature: T.untyped, # as `T::Private::Methods::Signature` is private
-        ).returns(T::Array[String])
-      end
+      #: ((Method | UnboundMethod) method_def, untyped signature) -> Array[String]
       def parameters_types_from_signature(method_def, signature)
-        params = T.let([], T::Array[String])
+        params = [] #: Array[String]
 
         return method_def.parameters.map { "T.untyped" } unless signature
 
@@ -116,7 +136,7 @@ module Tapioca
         params
       end
 
-      sig { params(scope: RBI::Scope, method_def: T.any(Method, UnboundMethod), class_method: T::Boolean).void }
+      #: (RBI::Scope scope, (Method | UnboundMethod) method_def, ?class_method: bool) -> void
       def create_method_from_def(scope, method_def, class_method: false)
         scope.create_method(
           method_def.name.to_s,
@@ -126,13 +146,13 @@ module Tapioca
         )
       end
 
-      sig { params(method_def: T.any(Method, UnboundMethod)).returns(T::Array[RBI::TypedParam]) }
+      #: ((Method | UnboundMethod) method_def) -> Array[RBI::TypedParam]
       def compile_method_parameters_to_rbi(method_def)
         signature = signature_of(method_def)
         method_def = signature.nil? ? method_def : signature.method
         method_types = parameters_types_from_signature(method_def, signature)
 
-        parameters = T.let(method_def.parameters, T::Array[[Symbol, T.nilable(Symbol)]])
+        parameters = method_def.parameters #: Array[[Symbol, Symbol?]]
 
         parameters.each_with_index.map do |(type, name), index|
           fallback_arg_name = "_arg#{index}"
@@ -162,7 +182,7 @@ module Tapioca
         end
       end
 
-      sig { params(method_def: T.any(Method, UnboundMethod)).returns(String) }
+      #: ((Method | UnboundMethod) method_def) -> String
       def compile_method_return_type_to_rbi(method_def)
         signature = signature_of(method_def)
         return_type = signature.nil? ? "T.untyped" : name_of_type(signature.return_type)

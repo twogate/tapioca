@@ -32,13 +32,13 @@ module Tapioca
       #   def regenerate_auth_token; end
       # end
       # ~~~
+      #: [ConstantType = (singleton(ActiveRecord::Base) & Extensions::ActiveRecord)]
       class ActiveRecordSecureToken < Compiler
         extend T::Sig
         include Helpers::ActiveRecordConstantsHelper
 
-        ConstantType = type_member { { fixed: T.all(T.class_of(ActiveRecord::Base), Extensions::ActiveRecord) } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           return if constant.__tapioca_secure_tokens.nil?
 
@@ -59,7 +59,8 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             descendants_of(::ActiveRecord::Base).reject(&:abstract_class?)
           end

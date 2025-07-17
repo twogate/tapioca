@@ -23,7 +23,7 @@ this compiler will produce the RBI file `cart.rbi` with the following content:
 ~~~rbi
 # cart.rbi
 # typed: strong
-class Cart
+class Cart < Google::Protobuf::AbstractMessage
   sig { returns(Integer) }
   def customer_id; end
 
@@ -58,3 +58,4 @@ Do this by extending your Sorbet config file:
 ~~~
 --ignore=/path/to/proto/cart_pb.rb
 ~~~
+: [ConstantType = Class[top]]

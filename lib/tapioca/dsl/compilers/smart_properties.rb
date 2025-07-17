@@ -29,42 +29,43 @@ module Tapioca
       # # post.rbi
       # # typed: true
       # class Post
-      #   sig { returns(T.nilable(::String)) }
-      #   def title; end
+      #   include SmartPropertiesGeneratedMethods
       #
-      #   sig { params(title: T.nilable(::String)).returns(T.nilable(::String)) }
-      #   def title=(title); end
+      #   module SmartPropertiesGeneratedMethods
+      #     sig { returns(T.nilable(::String)) }
+      #     def title; end
       #
-      #   sig { returns(::String) }
-      #   def description; end
+      #     sig { params(title: T.nilable(::String)).returns(T.nilable(::String)) }
+      #     def title=(title); end
       #
-      #   sig { params(description: ::String).returns(::String) }
-      #   def description=(description); end
+      #     sig { returns(::String) }
+      #     def description; end
       #
-      #   sig { returns(T.nilable(T::Boolean)) }
-      #   def published?; end
+      #     sig { params(description: ::String).returns(::String) }
+      #     def description=(description); end
       #
-      #   sig { params(published: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
-      #   def published=(published); end
+      #     sig { returns(T.nilable(T::Boolean)) }
+      #     def published?; end
       #
-      #   sig { returns(T.nilable(T::Boolean)) }
-      #   def enabled; end
+      #     sig { params(published: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
+      #     def published=(published); end
       #
-      #   sig { params(enabled: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
-      #   def enabled=(enabled); end
+      #     sig { returns(T.nilable(T::Boolean)) }
+      #     def enabled; end
+      #
+      #     sig { params(enabled: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
+      #     def enabled=(enabled); end
+      #   end
       # end
       # ~~~
+      #: [ConstantType = singleton(::SmartProperties)]
       class SmartProperties < Compiler
         extend T::Sig
 
-        ConstantType = type_member { { fixed: T.class_of(::SmartProperties) } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
-          properties = T.let(
-            T.unsafe(constant).properties,
-            ::SmartProperties::PropertyCollection,
-          )
+          properties = T.unsafe(constant).properties #: ::SmartProperties::PropertyCollection
           return if properties.keys.empty?
 
           root.create_path(constant) do |k|
@@ -82,24 +83,21 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
             all_modules.select do |c|
               name_of(c) &&
-                c != ::SmartProperties::Validations::Ancestor &&
-                c < ::SmartProperties && ::SmartProperties::ClassMethods === c
+                ::SmartProperties > c &&
+                ::SmartProperties::Validations::Ancestor != c &&
+                ::SmartProperties::ClassMethods === c
             end
           end
         end
 
         private
 
-        sig do
-          params(
-            mod: RBI::Scope,
-            property: ::SmartProperties::Property,
-          ).void
-        end
+        #: (RBI::Scope mod, ::SmartProperties::Property property) -> void
         def generate_methods_for_property(mod, property)
           type = type_for(property)
 
@@ -113,15 +111,12 @@ module Tapioca
           mod.create_method(property.reader.to_s, return_type: type)
         end
 
-        BOOLEANS = T.let(
-          [
-            [true, false],
-            [false, true],
-          ].freeze,
-          T::Array[[T::Boolean, T::Boolean]],
-        )
+        BOOLEANS = [
+          [true, false],
+          [false, true],
+        ].freeze #: Array[[bool, bool]]
 
-        sig { params(property: ::SmartProperties::Property).returns(String) }
+        #: (::SmartProperties::Property property) -> String
         def type_for(property)
           converter, accepter, required = property.to_h.fetch_values(
             :converter,

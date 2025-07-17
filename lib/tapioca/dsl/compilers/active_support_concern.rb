@@ -37,19 +37,19 @@ module Tapioca
       #   mixes_in_class_methods(::Foo::ClassMethods)
       # end
       # ~~~
+      #: [ConstantType = Module]
       class ActiveSupportConcern < Compiler
         extend T::Sig
 
-        ConstantType = type_member { { fixed: Module } }
-
-        sig { override.void }
+        # @override
+        #: -> void
         def decorate
           dependencies = linearized_dependencies
 
           mixed_in_class_methods = dependencies
             .uniq # Deduplicate
             .filter_map do |concern| # Map to class methods module name, if exists
-              "#{qualified_name_of(concern)}::ClassMethods" if concern.const_defined?(:ClassMethods)
+              "#{qualified_name_of(concern)}::ClassMethods" if concern.const_defined?(:ClassMethods, false)
             end
 
           return if mixed_in_class_methods.empty?
@@ -64,22 +64,22 @@ module Tapioca
         class << self
           extend T::Sig
 
-          sig { override.returns(T::Enumerable[Module]) }
+          # @override
+          #: -> T::Enumerable[Module]
           def gather_constants
-            # Find all Modules that are:
             all_modules.select do |mod|
-              # named (i.e. not anonymous)
-              name_of(mod) &&
-                # not singleton classes
+              name_of(mod) && # i.e. not anonymous
                 !mod.singleton_class? &&
-                # extend ActiveSupport::Concern, and
-                mod.singleton_class < ActiveSupport::Concern &&
-                # have dependencies (i.e. include another concern)
-                !dependencies_of(mod).empty?
+                ActiveSupport::Concern > mod.singleton_class &&
+                has_dependencies?(mod)
             end
           end
 
-          sig { params(concern: Module).returns(T::Array[Module]) }
+          # Returns true when `mod` includes other concerns
+          #: (Module mod) -> bool
+          def has_dependencies?(mod) = dependencies_of(mod).any?
+
+          #: (Module concern) -> Array[Module]
           def dependencies_of(concern)
             concern.instance_variable_get(:@_dependencies) || []
           end
@@ -87,12 +87,12 @@ module Tapioca
 
         private
 
-        sig { params(concern: Module).returns(T::Array[Module]) }
+        #: (Module concern) -> Array[Module]
         def dependencies_of(concern)
           self.class.dependencies_of(concern)
         end
 
-        sig { params(concern: Module).returns(T::Array[Module]) }
+        #: (?Module concern) -> Array[Module]
         def linearized_dependencies(concern = constant)
           # Grab all the dependencies of the concern
           dependencies = dependencies_of(concern)

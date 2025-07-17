@@ -14,7 +14,9 @@ gem "debug"
 gem "irb"
 gem "rubocop-shopify"
 gem "rubocop-sorbet", ">= 0.4.1"
-gem "rubocop-rspec"
+gem "rubocop-rspec" # useful even though we use minitest/spec
+gem "ruby-lsp", ">= 0.23.1"
+gem "ruby-lsp-rails", ">= 0.4"
 
 group :deployment, :development do
   gem "rake"
@@ -27,6 +29,11 @@ group :development, :test do
     rails_version = CURRENT_RAILS_VERSION if rails_version == "current"
     gem "rails", "~> #{rails_version}.0"
   end
+  if rails_version == "7.0"
+    gem "sqlite3", "~> 1.4"
+  else
+    gem "sqlite3"
+  end
 
   gem "mutex_m"
   gem "smart_properties"
@@ -35,12 +42,8 @@ group :development, :test do
   gem "sprockets"
   gem "state_machines"
   gem "activerecord-typedstore"
-  gem "sqlite3", "~>1.4"
   gem "identity_cache"
-  gem "cityhash",
-    git: "https://github.com/csfrancis/cityhash.git",
-    ref: "3cfc7d01f333c01811d5e834f1495eaa29f87c36",
-    require: false
+  gem "cityhash" # identity_cache emits a warning if this is not present
   gem "activeresource"
   gem "google-protobuf"
   gem "graphql"
@@ -58,4 +61,4 @@ group :test do
   gem "webmock"
 end
 
-gem "kramdown", "~> 2.4"
+gem "kramdown", "~> 2.5"

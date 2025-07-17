@@ -4,16 +4,13 @@
 module Tapioca
   module Runtime
     module Trackers
+      # @abstract
       module Tracker
         extend T::Sig
-        extend T::Helpers
-
-        abstract!
-
         class << self
           extend T::Sig
 
-          sig { params(base: T.all(Tracker, Module)).void }
+          #: ((Tracker & Module) base) -> void
           def extended(base)
             Trackers.register_tracker(base)
             base.instance_exec do
@@ -22,7 +19,7 @@ module Tapioca
           end
         end
 
-        sig { void }
+        #: -> void
         def disable!
           @enabled = false
         end

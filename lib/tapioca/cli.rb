@@ -111,8 +111,7 @@ module Tapioca
     option :workers,
       aliases: ["-w"],
       type: :numeric,
-      desc: "Number of parallel workers to use when generating RBIs (default: 2)",
-      default: 2
+      desc: "Number of parallel workers to use when generating RBIs (default: auto)"
     option :rbi_max_line_length,
       type: :numeric,
       desc: "Set the max line length of generated RBIs. Signatures longer than the max line length will be wrapped",
@@ -140,6 +139,10 @@ module Tapioca
       banner: "constant [constant ...]",
       desc: "Do not generate RBI definitions for the given application constant(s)",
       default: []
+    option :compiler_options,
+      type: :hash,
+      desc: "Options to pass to the DSL compilers",
+      default: {}
     def dsl(*constant_or_paths)
       set_environment(options)
 
@@ -161,6 +164,8 @@ module Tapioca
         rbi_formatter: rbi_formatter(options),
         app_root: options[:app_root],
         halt_upon_load_error: options[:halt_upon_load_error],
+        compiler_options: options[:compiler_options],
+        lsp_addon: self.class.addon_mode,
       }
 
       command = if options[:verify]
@@ -256,6 +261,11 @@ module Tapioca
       type: :boolean,
       desc: "Halt upon a load error while loading the Rails application",
       default: true
+    option :lsp_addon,
+      type: :boolean,
+      desc: "Generate Gem RBIs from the LSP add-on. Internal to Tapioca and not intended for end-users",
+      default: false,
+      hide: true
     def gem(*gems)
       set_environment(options)
 
@@ -290,6 +300,7 @@ module Tapioca
         dsl_dir: options[:dsl_dir],
         rbi_formatter: rbi_formatter(options),
         halt_upon_load_error: options[:halt_upon_load_error],
+        lsp_addon: options[:lsp_addon],
       }
 
       command = if verify
@@ -342,7 +353,7 @@ module Tapioca
       default: {}
     def annotations
       if !options[:netrc] && options[:netrc_file]
-        raise Thor::Error, set_color("Options `--no-netrc` and `--netrc-file` can't be used together", :bold, :red)
+        raise Tapioca::Error, set_color("Options `--no-netrc` and `--netrc-file` can't be used together", :bold, :red)
       end
 
       command = Commands::Annotations.new(
@@ -363,9 +374,22 @@ module Tapioca
     end
 
     no_commands do
+      @addon_mode = false
+
       class << self
+        extend T::Sig
+
+        # Indicates that we are running from the LSP, set using the `addon_mode!` method
+        attr_reader :addon_mode
+
+        #: -> void
+        def addon_mode!
+          @addon_mode = true
+        end
+
+        #: -> bool
         def exit_on_failure?
-          true
+          !@addon_mode
         end
       end
     end

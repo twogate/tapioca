@@ -8,17 +8,7 @@ module Tapioca
       include SorbetHelper
       include RBIFilesHelper
 
-      sig do
-        params(
-          gem_rbi_dir: String,
-          dsl_rbi_dir: String,
-          annotations_rbi_dir: String,
-          shim_rbi_dir: String,
-          todo_rbi_file: String,
-          payload: T::Boolean,
-          number_of_workers: T.nilable(Integer),
-        ).void
-      end
+      #: (gem_rbi_dir: String, dsl_rbi_dir: String, annotations_rbi_dir: String, shim_rbi_dir: String, todo_rbi_file: String, payload: bool, number_of_workers: Integer?) -> void
       def initialize(
         gem_rbi_dir:,
         dsl_rbi_dir:,
@@ -40,7 +30,8 @@ module Tapioca
 
       private
 
-      sig { override.void }
+      # @override
+      #: -> void
       def execute
         index = RBI::Index.new
 
@@ -50,7 +41,7 @@ module Tapioca
           return
         end
 
-        payload_path = T.let(nil, T.nilable(String))
+        payload_path = nil #: String?
 
         if @payload
           Dir.mktmpdir do |dir|
@@ -58,7 +49,7 @@ module Tapioca
             result = sorbet("--no-config --print=payload-sources:#{payload_path}")
 
             unless result.status
-              raise Thor::Error, <<~ERROR
+              raise Tapioca::Error, <<~ERROR
                 "Sorbet failed to dump payload"
                 #{result.err}
               ERROR
@@ -96,7 +87,7 @@ module Tapioca
             "\nPlease remove the duplicated definitions from #{@shim_rbi_dir} and #{@todo_rbi_file}", :red
           )
 
-          raise Thor::Error, messages.join("\n")
+          raise Tapioca::Error, messages.join("\n")
         end
 
         say("\nNo duplicates found in shim RBIs", :green)

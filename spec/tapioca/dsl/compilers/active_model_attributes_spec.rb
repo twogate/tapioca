@@ -8,7 +8,7 @@ module Tapioca
     module Compilers
       class ActiveModelAttributesSpec < ::DslSpec
         describe "Tapioca::Dsl::Compilers::ActiveModelAttributes" do
-          sig { void }
+          #: -> void
           def before_setup
             require "active_model"
           end
@@ -184,6 +184,54 @@ module Tapioca
 
                   sig { params(value: T.nilable(::String)).returns(T.nilable(::String)) }
                   def custom_with_cast_sig_attr=(value); end
+                end
+              RBI
+
+              assert_equal(expected, rbi_for(:Shop))
+            end
+
+            it "generates method sigs for attribute type with `#__tapioca_type`" do
+              add_ruby_file("shop.rb", <<~RUBY)
+                class GenericType < ActiveModel::Type::Value
+                  def initialize(tapioca_type)
+                    @tapioca_type = tapioca_type
+                  end
+
+                  def __tapioca_type = @tapioca_type
+                end
+
+                class User; end
+                class Post; end
+
+                class Shop
+                  include ActiveModel::Model
+                  include ActiveModel::Attributes
+
+                  attribute :user, GenericType.new(User)
+                  attribute :post, GenericType.new(T.nilable(Post))
+
+                  def initialize(attributes = {})
+                    raise 'User is required' unless attributes.key?(:user)
+                    super
+                  end
+                end
+              RUBY
+
+              expected = <<~RBI
+                # typed: strong
+
+                class Shop
+                  sig { returns(T.nilable(::Post)) }
+                  def post; end
+
+                  sig { params(value: T.nilable(::Post)).returns(T.nilable(::Post)) }
+                  def post=(value); end
+
+                  sig { returns(::User) }
+                  def user; end
+
+                  sig { params(value: ::User).returns(::User) }
+                  def user=(value); end
                 end
               RBI
 

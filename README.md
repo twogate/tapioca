@@ -47,10 +47,14 @@ Tapioca makes it easy to work with [Sorbet](https://sorbet.org) in your codebase
     * [Changing the typed strictness of annotations files](#changing-the-typed-strictness-of-annotations-files)
   * [Generating RBI files for Rails and other DSLs](#generating-rbi-files-for-rails-and-other-dsls)
     * [Keeping RBI files for DSLs up-to-date](#keeping-rbi-files-for-dsls-up-to-date)
+    * [Using DSL compiler options](#using-dsl-compiler-options)
     * [Writing custom DSL compilers](#writing-custom-dsl-compilers)
     * [Writing custom DSL extensions](#writing-custom-dsl-extensions)
   * [RBI files for missing constants and methods](#rbi-files-for-missing-constants-and-methods)
   * [Configuration](#configuration)
+* [Editor Integration](#editor-integration)
+  * [Setup](#setup)
+  * [Features](#features)
 * [Contributing](#contributing)
   * [DSL compilers](#dsl-compilers)
 * [License](#license)
@@ -179,7 +183,7 @@ Options:
                [--include-dependencies], [--no-include-dependencies], [--skip-include-dependencies]  # Generate RBI files for dependencies of the given gem(s)
                                                                                                      # Default: false
   --typed, -t, [--typed-overrides=gem:level [gem:level ...]]                                         # Override for typed sigils for generated gem RBIs
-                                                                                                     # Default: {"activesupport"=>"false"}
+                                                                                                     # Default: {"activesupport" => "false"}
                [--verify], [--no-verify], [--skip-verify]                                            # Verify RBIs are up-to-date
                                                                                                      # Default: false
                [--doc], [--no-doc], [--skip-doc]                                                     # Include YARD documentation from sources when generating RBIs. Warning: this might be slow
@@ -394,6 +398,12 @@ Tapioca also supports pulling annotations from multiple sources:
 $ bin/tapioca annotations --sources https://raw.githubusercontent.com/$USER/$REPO1/$BRANCH https://raw.githubusercontent.com/$USER/$REPO2/$BRANCH
 ```
 
+You can also specify a local directory path to pull annotations from
+
+```shell
+$ bin/tapioca annotations --sources path/to/folder
+```
+
 #### Basic authentication
 
 Private repositories can be used as sources by passing the option `--auth` with an authentication string. For Github, this string is `token $TOKEN` where `$TOKEN` is a [personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token):
@@ -488,8 +498,7 @@ Options:
                                                                                                    # Default: false
   -q,        [--quiet], [--no-quiet], [--skip-quiet]                                               # Suppresses file creation output
                                                                                                    # Default: false
-  -w,        [--workers=N]                                                                         # Number of parallel workers to use when generating RBIs (default: 2)
-                                                                                                   # Default: 2
+  -w,        [--workers=N]                                                                         # Number of parallel workers to use when generating RBIs (default: auto)
              [--rbi-max-line-length=N]                                                             # Set the max line length of generated RBIs. Signatures longer than the max line length will be wrapped
                                                                                                    # Default: 120
   -e,        [--environment=ENVIRONMENT]                                                           # The Rack/Rails environment to use when generating RBIs
@@ -501,6 +510,7 @@ Options:
              [--halt-upon-load-error], [--no-halt-upon-load-error], [--skip-halt-upon-load-error]  # Halt upon a load error while loading the Rails application
                                                                                                    # Default: true
              [--skip-constant=constant [constant ...]]                                             # Do not generate RBI definitions for the given application constant(s)
+             [--compiler-options=key:value]                                                        # Options to pass to the DSL compilers
   -c,        [--config=<config file path>]                                                         # Path to the Tapioca configuration file
                                                                                                    # Default: sorbet/tapioca/config.yml
   -V,        [--verbose], [--no-verbose], [--skip-verbose]                                         # Verbose output for debugging purposes
@@ -543,6 +553,25 @@ if Rails.env.development?
       system("bundle exec tapioca dsl", exception: true)
     end
   end
+```
+
+#### Using DSL compiler options
+
+Some DSL compilers are able to change their behaviour based on the options passed to them. For example, the
+`ActiveRecordColumns` compiler can be configured to change how it generates types for method related to Active Record
+column attributes. To pass options during DSL RBI generation, use the `--compiler-options` flag:
+```shell
+$ bin/tapioca dsl --compiler-options=ActiveRecordColumnTypes:untyped
+```
+which will make the `ActiveRecordColumns` compiler generate untyped signatures for column attribute methods.
+
+Compiler options can be passed through the configuration file, as like any other option, and we expect most users to
+configure them this way. For example, to configure the `ActiveRecordColumns` compiler to generate untyped signatures,
+you need to add the following to your `sorbet/tapioca/config.yml` file:
+```yaml
+dsl:
+  compiler_options:
+    ActiveRecordColumnTypes: untyped
 ```
 
 #### Writing custom DSL compilers
@@ -928,13 +957,14 @@ dsl:
   exclude: []
   verify: false
   quiet: false
-  workers: 2
+  workers: 1
   rbi_max_line_length: 120
   environment: development
   list_compilers: false
   app_root: "."
   halt_upon_load_error: true
   skip_constant: []
+  compiler_options: {}
 gem:
   outdir: sorbet/rbi/gems
   file_header: true
@@ -972,13 +1002,34 @@ annotations:
 ```
 <!-- END_CONFIG_TEMPLATE -->
 
+## Editor Integration
+
+### Setup
+
+Tapioca supports generating RBIs upon file changes through the [Ruby LSP's add-on system](https://shopify.github.io/ruby-lsp/#add-ons). It's enabled by default on VS Code using [Ruby LSP](https://shopify.github.io/ruby-lsp/#usage), and you can enable it for other editors by supplying the `enabledFeatureFlags` option in LSP configuration with a hash value of `"tapiocaAddon": true`.
+
+If you'd like to disable the Tapioca add-on you can set `tapiocaAddon` to `false` in your LSP configuration. For VS Code this looks like `"rubyLsp.featureFlags": { "tapiocaAddon": false }` in your `settings.json`.
+
+### Features
+- DSL RBI generation: When editing a Ruby file, Tapioca will execute `bin/tapioca dsl` with the constants found in your file, e.g. `bin/tapioca dsl MyClass`
+- Gem RBI generation: When changes are made to `Gemfile.lock`, Tapioca will execute `bin/tapioca gem` with the updated gem names, e.g. `bin/tapioca gem my_gem`
+
 ## Contributing
 
 Bug reports and pull requests are welcome on GitHub at https://github.com/Shopify/tapioca. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [Contributor Covenant](https://github.com/Shopify/tapioca/blob/main/CODE_OF_CONDUCT.md) code of conduct.
 
 ### DSL compilers
 
-Contributions to existing DSL compilers are welcome. However, new compilers that support DSLs for gems other than Rails should live outside of Tapioca. Please refer to [writing custom dsl compilers](https://github.com/Shopify/tapioca?tab=readme-ov-file#writing-custom-dsl-compilers) for more information.
+Tapioca ships with a small collection of high quality DSL compilers for popular Ruby gems that are used heavily at Shopify, like Rails and GraphQL. We encourage the community to contribute new DSL compilers, though they shouldn't necessarily live in the Tapioca repo itself.
+
+It's best for DSL compilers to be contributed directly to gems they apply to ([example](https://github.com/Shopify/measured/tree/main/lib/tapioca/dsl/compilers)). This way, when changes are made to the gem's DSL, the gem's DSL compiler can be updated at the same time and be versioned/released together.
+
+If an upstream gem's maintainers don't wish to host a DSL compiler themselves, you can propose contributing it to:
+
+1. Tapioca, if it's a gem that Shopify uses (ask us in an issue or PR)
+2. A third party DSL compiler repository, like [AngelList/Boba](https://github.com/angellist/boba). These are not supported by Shopify.
+
+For help writing a DSL compiler, please refer to [writing custom dsl compilers](https://github.com/Shopify/tapioca?tab=readme-ov-file#writing-custom-dsl-compilers).
 
 ## License
 

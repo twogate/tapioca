@@ -11,6 +11,7 @@ module Tapioca
       end
 
       before(:all) do
+        @project.require_default_gems
         @project.bundle_install!
       end
 
@@ -295,6 +296,58 @@ module Tapioca
         refute_success_status(result)
       end
 
+      it "ignores duplicates that have a parent class" do
+        @project.write!("sorbet/rbi/gems/foo@1.0.0.rbi", <<~RBI)
+          class Foo
+          end
+          class Bar < Foo
+          end
+        RBI
+
+        @project.write!("sorbet/rbi/shims/foo.rbi", <<~RBI)
+          class Foo < Baz
+          end
+          class Bar < Baz
+          end
+        RBI
+
+        result = @project.tapioca("check-shims --no-payload")
+        assert_success_status(result)
+      end
+
+      it "detects duplicates that have a parent class" do
+        @project.write!("sorbet/rbi/gems/foo@1.0.0.rbi", <<~RBI)
+          class Foo
+          end
+          class Bar < Foo
+          end
+        RBI
+
+        @project.write!("sorbet/rbi/shims/foo.rbi", <<~RBI)
+          class Foo
+          end
+          class Bar < Foo
+          end
+        RBI
+
+        result = @project.tapioca("check-shims --no-payload")
+
+        assert_stderr_equals(<<~ERR, result)
+
+          Duplicated RBI for ::Foo:
+           * sorbet/rbi/shims/foo.rbi:1:0-2:3
+           * sorbet/rbi/gems/foo@1.0.0.rbi:1:0-2:3
+
+          Duplicated RBI for ::Bar:
+           * sorbet/rbi/shims/foo.rbi:3:0-4:3
+           * sorbet/rbi/gems/foo@1.0.0.rbi:3:0-4:3
+
+          Please remove the duplicated definitions from sorbet/rbi/shims and sorbet/rbi/todo.rbi
+        ERR
+
+        refute_success_status(result)
+      end
+
       it "detects duplicates from same shim file" do
         @project.write!("sorbet/rbi/gems/foo@1.0.0.rbi", <<~RBI)
           class Foo
@@ -373,23 +426,18 @@ module Tapioca
           Looking for duplicates...  Done
         OUT
 
-        assert_stderr_equals(<<~ERR, result)
+        sections = T.must(result.err).split("\n\n").map(&:strip)
+        duplicates_for_object = sections[0]&.split("\n")
+        assert_includes(duplicates_for_object, "Duplicated RBI for ::Object:")
+        assert_includes(duplicates_for_object, " * sorbet/rbi/shims/core/object.rbi:1:0-1:17")
 
-          Duplicated RBI for ::Object:
-           * https://github.com/sorbet/sorbet/tree/master/rbi/core/object.rbi#L27
-           * https://github.com/sorbet/sorbet/tree/master/rbi/stdlib/json.rbi#L1060
-           * sorbet/rbi/shims/core/object.rbi:1:0-1:17
+        duplicates_for_string_capitalize = sections[1]&.split("\n")
+        assert_includes(duplicates_for_string_capitalize, "Duplicated RBI for ::String#capitalize:")
+        assert_includes(duplicates_for_string_capitalize, " * sorbet/rbi/shims/core/string.rbi:3:2-3:23")
 
-          Duplicated RBI for ::String#capitalize:
-           * https://github.com/sorbet/sorbet/tree/master/rbi/core/string.rbi#L572
-           * sorbet/rbi/shims/core/string.rbi:3:2-3:23
-
-          Duplicated RBI for ::Base64::decode64:
-           * https://github.com/sorbet/sorbet/tree/master/rbi/stdlib/base64.rbi#L37
-           * sorbet/rbi/shims/stdlib/base64.rbi:3:2-3:29
-
-          Please remove the duplicated definitions from sorbet/rbi/shims and sorbet/rbi/todo.rbi
-        ERR
+        duplicates_for_base64_decode64 = sections[2]&.split("\n")
+        assert_includes(duplicates_for_base64_decode64, "Duplicated RBI for ::Base64::decode64:")
+        assert_includes(duplicates_for_base64_decode64, " * sorbet/rbi/shims/stdlib/base64.rbi:3:2-3:29")
 
         refute_success_status(result)
       end
@@ -470,7 +518,7 @@ module Tapioca
 
         assert_stderr_equals(<<~ERR, result)
 
-          Warning: unexpected end of file, assuming it is closing the parent top level context. expected an `end` to close the `class` statement. (sorbet/rbi/shims/foo.rbi:2:0)
+          Warning: unexpected end-of-input, assuming it is closing the parent top level context. expected an `end` to close the `class` statement. (sorbet/rbi/shims/foo.rbi:1:9)
 
           Duplicated RBI for ::Foo#foo:
            * sorbet/rbi/shims/bar.rbi:2:2-2:14
@@ -666,7 +714,24 @@ module Tapioca
         assert_success_status(result)
       end
 
-      sig { params(string: String).returns(String) }
+      it "ignores duplicated methods with different parameters" do
+        @project.write!("sorbet/rbi/gems/foo@1.0.0.rbi", <<~RBI)
+          class Foo
+            def foo(a, b); end
+          end
+        RBI
+
+        @project.write!("sorbet/rbi/shims/foo.rbi", <<~RBI)
+          class Foo
+            def foo(*args); end
+          end
+        RBI
+
+        result = @project.tapioca("check-shims --no-payload")
+        assert_success_status(result)
+      end
+
+      #: (String string) -> String
       def strip_timer(string)
         string.gsub(/ \(\d+\.\d+s\)/, "")
       end

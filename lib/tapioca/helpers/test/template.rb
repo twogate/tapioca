@@ -4,27 +4,22 @@
 module Tapioca
   module Helpers
     module Test
+      # @requires_ancestor: Kernel
       module Template
         extend T::Sig
-        extend T::Helpers
+        ERB_SUPPORTS_KVARGS = ::ERB.instance_method(:initialize).parameters.assoc(:key) #: [Symbol, Symbol]?
 
-        requires_ancestor { Kernel }
-
-        ERB_SUPPORTS_KVARGS = T.let(
-          ::ERB.instance_method(:initialize).parameters.assoc(:key), T.nilable([Symbol, Symbol])
-        )
-
-        sig { params(selector: String).returns(T::Boolean) }
+        #: (String selector) -> bool
         def ruby_version(selector)
           ::Gem::Requirement.new(selector).satisfied_by?(::Gem::Version.new(RUBY_VERSION))
         end
 
-        sig { params(selector: String).returns(T::Boolean) }
+        #: (String selector) -> bool
         def rails_version(selector)
           ::Gem::Requirement.new(selector).satisfied_by?(ActiveSupport.gem_version)
         end
 
-        sig { params(src: String, trim_mode: String).returns(String) }
+        #: (String src, ?trim_mode: String) -> String
         def template(src, trim_mode: ">")
           erb = if ERB_SUPPORTS_KVARGS
             ::ERB.new(src, trim_mode: trim_mode)
@@ -35,7 +30,7 @@ module Tapioca
           erb.result(binding)
         end
 
-        sig { params(str: String, indent: Integer).returns(String) }
+        #: (String str, Integer indent) -> String
         def indented(str, indent)
           str.lines.map! do |line|
             next line if line.chomp.empty?

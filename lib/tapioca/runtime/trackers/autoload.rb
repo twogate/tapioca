@@ -10,12 +10,12 @@ module Tapioca
 
         NOOP_METHOD = ->(*_args, **_kwargs, &_block) {}
 
-        @constant_names_registered_for_autoload = T.let([], T::Array[String])
+        @constant_names_registered_for_autoload = [] #: Array[String]
 
         class << self
           extend T::Sig
 
-          sig { void }
+          #: -> void
           def eager_load_all!
             with_disabled_exits do
               until @constant_names_registered_for_autoload.empty?
@@ -27,18 +27,14 @@ module Tapioca
             end
           end
 
-          sig { params(constant_name: String).void }
+          #: (String constant_name) -> void
           def register(constant_name)
             return unless enabled?
 
             @constant_names_registered_for_autoload << constant_name
           end
 
-          sig do
-            type_parameters(:Result)
-              .params(block: T.proc.returns(T.type_parameter(:Result)))
-              .returns(T.type_parameter(:Result))
-          end
+          #: [Result] { -> Result } -> Result
           def with_disabled_exits(&block)
             original_abort = Kernel.instance_method(:abort)
             original_exit = Kernel.instance_method(:exit)
@@ -47,7 +43,9 @@ module Tapioca
               Kernel.define_method(:abort, NOOP_METHOD)
               Kernel.define_method(:exit, NOOP_METHOD)
 
-              block.call
+              Tapioca.silence_warnings do
+                block.call
+              end
             ensure
               Kernel.define_method(:exit, original_exit)
               Kernel.define_method(:abort, original_abort)
