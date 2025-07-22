@@ -548,32 +548,22 @@ module Tapioca
         #: -> void
         def create_relation_methods
           create_relation_method("all")
-          create_relation_method(
-            "group",
-            parameters: [
-              create_rest_param("args", type: "T.untyped"),
-              create_block_param("blk", type: "T.untyped"),
-            ],
-            relation_return_type: RelationGroupChainClassName,
-            association_return_type: AssociationRelationGroupChainClassName,
-          )
-          create_relation_method(
-            "where",
-            parameters: [
-              create_opt_param('string_query', type: 'String', default: 'nil'),
-            ] + constant.column_names.map do |column_name|
-              create_kw_opt_param(column_name, type: 'T.any(String, Integer, Symbol, T::Boolean, NilClass, T::Array[T.any(String, Integer, Symbol)], ActiveRecord::AssociationRelation, ActiveRecord::Relation)', default: 'nil')
-            end + [
-              create_kw_rest_param('nested', type: 'T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))'),
-            ],
-            relation_return_type: RelationWhereChainClassName,
-            association_return_type: AssociationRelationWhereChainClassName,
-          )
 
           QUERY_METHODS.each do |method_name|
             case method_name
             when :where
-              create_where_relation_method
+              create_relation_method(
+                "where",
+                parameters: [
+                  create_opt_param('string_query', type: 'String', default: 'nil'),
+                ] + constant.column_names.map do |column_name|
+                  create_kw_opt_param(column_name, type: 'T.any(String, Integer, Symbol, T::Boolean, NilClass, T::Array[T.any(String, Integer, Symbol)], ActiveRecord::AssociationRelation, ActiveRecord::Relation)', default: 'nil')
+                end + [
+                  create_kw_rest_param('nested', type: 'T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))'),
+                ],
+                relation_return_type: RelationWhereChainClassName,
+                association_return_type: AssociationRelationWhereChainClassName,
+              )
             when :group
               create_relation_method(
                 "group",
