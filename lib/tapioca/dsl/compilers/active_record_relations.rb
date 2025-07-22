@@ -552,18 +552,7 @@ module Tapioca
           QUERY_METHODS.each do |method_name|
             case method_name
             when :where
-              create_relation_method(
-                "where",
-                parameters: [
-                  create_opt_param('string_query', type: 'String', default: 'nil'),
-                ] + constant.column_names.map do |column_name|
-                  create_kw_opt_param(column_name, type: 'T.any(String, Integer, Symbol, T::Boolean, NilClass, T::Array[T.any(String, Integer, Symbol)], ActiveRecord::AssociationRelation, ActiveRecord::Relation)', default: 'nil')
-                end + [
-                  create_kw_rest_param('nested', type: 'T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))'),
-                ],
-                relation_return_type: RelationWhereChainClassName,
-                association_return_type: AssociationRelationWhereChainClassName,
-              )
+              create_where_relation_method
             when :group
               create_relation_method(
                 "group",
@@ -1023,28 +1012,36 @@ module Tapioca
 
         #: -> void
         def create_where_relation_method
-          relation_methods_module.create_method("where") do |method|
-            method.add_rest_param("args")
+          parameters = [
+            create_opt_param('string_query', type: 'String', default: 'nil'),
+          ] + constant.column_names.map do |column_name|
+            create_kw_opt_param(column_name, type: 'T.any(String, Integer, Symbol, T::Boolean, NilClass, T::Array[T.any(String, Integer, Symbol)], ActiveRecord::AssociationRelation, ActiveRecord::Relation)', default: 'nil')
+          end + [
+            create_kw_rest_param('nested', type: 'T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))'),
+          ]
+
+          relation_methods_module.create_method("where", parameters:) do |method|
+            # method.add_rest_param("args")
 
             method.add_sig do |sig|
               sig.return_type = RelationWhereChainClassName
             end
 
             method.add_sig do |sig|
-              sig.add_param("args", "T.untyped")
+              # sig.add_param("args", "T.untyped")
               sig.return_type = RelationClassName
             end
           end
 
-          association_relation_methods_module.create_method("where") do |method|
-            method.add_rest_param("args")
+          association_relation_methods_module.create_method("where", parameters:) do |method|
+            # method.add_rest_param("args")
 
             method.add_sig do |sig|
               sig.return_type = AssociationRelationWhereChainClassName
             end
 
             method.add_sig do |sig|
-              sig.add_param("args", "T.untyped")
+              # sig.add_param("args", "T.untyped")
               sig.return_type = AssociationRelationClassName
             end
           end
