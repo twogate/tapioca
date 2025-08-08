@@ -1020,30 +1020,28 @@ module Tapioca
             create_kw_rest_param('nested', type: 'T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))'),
           ]
 
-          relation_methods_module.create_method("where", parameters:) do |method|
-            # method.add_rest_param("args")
+          relation_methods_module.create_method("where") do |method|
+            parameters.each do |param|
+              method.params << param.param
+            end
 
             method.add_sig do |sig|
               sig.return_type = RelationWhereChainClassName
             end
 
-            method.add_sig do |sig|
-              # sig.add_param("args", "T.untyped")
-              sig.return_type = RelationClassName
-            end
+            method.add_sig(params: parameters.map { |param| RBI::SigParam.new(param.param.name.to_s, param.type) }, return_type: RelationClassName)
           end
 
-          association_relation_methods_module.create_method("where", parameters:) do |method|
-            # method.add_rest_param("args")
+          association_relation_methods_module.create_method("where") do |method|
+            parameters.each do |param|
+              method.params << param.param
+            end
 
             method.add_sig do |sig|
               sig.return_type = AssociationRelationWhereChainClassName
             end
 
-            method.add_sig do |sig|
-              # sig.add_param("args", "T.untyped")
-              sig.return_type = AssociationRelationClassName
-            end
+            method.add_sig(params: parameters.map { |param| RBI::SigParam.new(param.param.name.to_s, param.type) }, return_type: AssociationRelationClassName)
           end
         end
 
