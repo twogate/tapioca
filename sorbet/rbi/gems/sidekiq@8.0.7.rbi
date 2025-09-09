@@ -8,80 +8,31 @@
 # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#36
 module ActiveJob; end
 
-class ActiveJob::Base
-  include ::Sidekiq::Job::Options
-  extend ::Sidekiq::Job::Options::ClassMethods
-
-  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-  def sidekiq_options_hash; end
-
-  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-  def sidekiq_options_hash=(_arg0); end
-
-  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-  def sidekiq_retries_exhausted_block; end
-
-  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-  def sidekiq_retries_exhausted_block=(_arg0); end
-
-  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-  def sidekiq_retry_in_block; end
-
-  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-  def sidekiq_retry_in_block=(_arg0); end
-
-  class << self
-    # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-    def sidekiq_options_hash; end
-
-    # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-    def sidekiq_options_hash=(val); end
-
-    # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-    def sidekiq_retries_exhausted_block; end
-
-    # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-    def sidekiq_retries_exhausted_block=(val); end
-
-    # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-    def sidekiq_retry_in_block; end
-
-    # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-    def sidekiq_retry_in_block=(val); end
-
-    private
-
-    # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-    def __synchronized_sidekiq_options_hash; end
-
-    # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-    def __synchronized_sidekiq_retries_exhausted_block; end
-
-    # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#32
-    def __synchronized_sidekiq_retry_in_block; end
-  end
-end
+class ActiveJob::Base; end
 
 # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#37
 module ActiveJob::QueueAdapters; end
 
-# source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#46
+# source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#47
 class ActiveJob::QueueAdapters::SidekiqAdapter
-  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#55
+  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#63
   def enqueue(job); end
 
-  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#50
+  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#58
   def enqueue_after_transaction_commit?; end
 
-  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#71
+  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#79
   def enqueue_all(jobs); end
 
-  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#63
+  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#71
   def enqueue_at(job, timestamp); end
+
+  # source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#111
+  def stopping?; end
 end
 
-# source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#104
-class ActiveJob::QueueAdapters::SidekiqAdapter::JobWrapper < ::Sidekiq::ActiveJob::Wrapper; end
+# source://sidekiq//lib/active_job/queue_adapters/sidekiq_adapter.rb#115
+ActiveJob::QueueAdapters::SidekiqAdapter::JobWrapper = Sidekiq::ActiveJob::Wrapper
 
 # Use `Sidekiq.transactional_push!` in your sidekiq.rb initializer
 #
@@ -168,7 +119,7 @@ module Sidekiq
     # source://sidekiq//lib/sidekiq.rb#77
     def strict_args!(mode = T.unsafe(nil)); end
 
-    # source://sidekiq//lib/sidekiq/transaction_aware_client.rb#40
+    # source://sidekiq//lib/sidekiq/transaction_aware_client.rb#46
     def transactional_push!; end
 
     # source://sidekiq//lib/sidekiq.rb#45
@@ -879,14 +830,14 @@ module Sidekiq::Job::Iterable
   # source://sidekiq//lib/sidekiq/job/iterable.rb#26
   def initialize; end
 
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#37
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#43
   def arguments; end
 
   # A hook to override that will be called around each iteration.
   #
   # Can be useful for some metrics collection, performance tracking etc.
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#82
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#88
   def around_iteration; end
 
   # The enumerator to be iterated over.
@@ -895,22 +846,29 @@ module Sidekiq::Job::Iterable
   #   implement an override for this method.
   # @return [Enumerator]
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#115
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#121
   def build_enumerator(*_arg0); end
 
   # Set a flag in Redis to mark this job as cancelled.
   # Cancellation is asynchronous and is checked at the start of iteration
   # and every 5 seconds thereafter as part of the recurring state flush.
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#49
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#55
   def cancel!; end
 
   # @return [Boolean]
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#63
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#69
   def cancelled?; end
 
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#67
+  # Access to the current object while iterating.
+  # This value is not reset so the latest element is
+  # explicitly available to cleanup/complete callbacks.
+  #
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#41
+  def current_object; end
+
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#73
   def cursor; end
 
   # The action to be performed on each item from the enumerator.
@@ -919,79 +877,79 @@ module Sidekiq::Job::Iterable
   #   implement an override for this method.
   # @return [void]
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#126
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#132
   def each_iteration(*_arg0); end
 
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#130
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#136
   def iteration_key; end
 
   # A hook to override that will be called when the job is cancelled.
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#100
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#106
   def on_cancel; end
 
   # A hook to override that will be called when the job finished iterating.
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#105
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#111
   def on_complete; end
 
   # A hook to override that will be called when the job resumes iterating.
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#88
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#94
   def on_resume; end
 
   # A hook to override that will be called when the job starts iterating.
   #
   # It is called only once, for the first time.
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#75
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#81
   def on_start; end
 
   # A hook to override that will be called each time the job is interrupted.
   #
   # This can be due to interruption or sidekiq stopping.
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#95
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#101
   def on_stop; end
 
   # @api private
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#135
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#141
   def perform(*args); end
 
   private
 
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#254
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#261
   def assert_enumerator!(enum); end
 
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#286
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#293
   def cleanup; end
 
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#177
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#183
   def fetch_previous_iteration_state; end
 
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#269
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#276
   def flush_state; end
 
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#293
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#300
   def handle_completed(completed); end
 
   # @return [Boolean]
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#173
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#179
   def is_cancelled?; end
 
   # one month
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#192
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#198
   def iterate_with_enumerator(enumerator, arguments); end
 
   # @raise [Interrupted]
   #
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#247
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#254
   def reenqueue_iteration_job; end
 
-  # source://sidekiq//lib/sidekiq/job/iterable.rb#237
+  # source://sidekiq//lib/sidekiq/job/iterable.rb#244
   def verify_iteration_time(time_limit, object); end
 
   class << self
@@ -1040,7 +998,7 @@ end
 # execute when using the default retry scheme. We don't want to "forget" the job
 # is cancelled before it has a chance to execute and cancel itself.
 #
-# source://sidekiq//lib/sidekiq/job/iterable.rb#44
+# source://sidekiq//lib/sidekiq/job/iterable.rb#50
 Sidekiq::Job::Iterable::CANCELLATION_PERIOD = T.let(T.unsafe(nil), String)
 
 # @api private
@@ -1196,13 +1154,13 @@ end
 
 # seconds
 #
-# source://sidekiq//lib/sidekiq/job/iterable.rb#187
+# source://sidekiq//lib/sidekiq/job/iterable.rb#193
 Sidekiq::Job::Iterable::STATE_FLUSH_INTERVAL = T.let(T.unsafe(nil), Integer)
 
 # we need to keep the state around as long as the job
 # might be retrying
 #
-# source://sidekiq//lib/sidekiq/job/iterable.rb#190
+# source://sidekiq//lib/sidekiq/job/iterable.rb#196
 Sidekiq::Job::Iterable::STATE_TTL = T.let(T.unsafe(nil), Integer)
 
 # The Options module is extracted so we can include it in ActiveJob::Base
@@ -1351,35 +1309,39 @@ class Sidekiq::Logger < ::Logger; end
 # source://sidekiq//lib/sidekiq/logger.rb#26
 module Sidekiq::Logger::Formatters; end
 
-# pink
-#
-# source://sidekiq//lib/sidekiq/logger.rb#34
+# source://sidekiq//lib/sidekiq/logger.rb#27
 class Sidekiq::Logger::Formatters::Base < ::Logger::Formatter
-  # source://sidekiq//lib/sidekiq/logger.rb#39
+  # source://sidekiq//lib/sidekiq/logger.rb#40
   def format_context(ctxt = T.unsafe(nil)); end
 
-  # source://sidekiq//lib/sidekiq/logger.rb#35
+  # source://sidekiq//lib/sidekiq/logger.rb#36
   def tid; end
 end
 
-# source://sidekiq//lib/sidekiq/logger.rb#27
-Sidekiq::Logger::Formatters::COLORS = T.let(T.unsafe(nil), Hash)
+# source://sidekiq//lib/sidekiq/logger.rb#28
+Sidekiq::Logger::Formatters::Base::COLORS = T.let(T.unsafe(nil), Hash)
 
-# source://sidekiq//lib/sidekiq/logger.rb#63
+# source://sidekiq//lib/sidekiq/logger.rb#70
 class Sidekiq::Logger::Formatters::JSON < ::Sidekiq::Logger::Formatters::Base
-  # source://sidekiq//lib/sidekiq/logger.rb#64
+  # source://sidekiq//lib/sidekiq/logger.rb#71
   def call(severity, time, program_name, message); end
 end
 
-# source://sidekiq//lib/sidekiq/logger.rb#51
+# source://sidekiq//lib/sidekiq/logger.rb#58
+class Sidekiq::Logger::Formatters::Plain < ::Sidekiq::Logger::Formatters::Base
+  # source://sidekiq//lib/sidekiq/logger.rb#59
+  def call(severity, time, program_name, message); end
+end
+
+# source://sidekiq//lib/sidekiq/logger.rb#52
 class Sidekiq::Logger::Formatters::Pretty < ::Sidekiq::Logger::Formatters::Base
-  # source://sidekiq//lib/sidekiq/logger.rb#52
+  # source://sidekiq//lib/sidekiq/logger.rb#53
   def call(severity, time, program_name, message); end
 end
 
-# source://sidekiq//lib/sidekiq/logger.rb#57
+# source://sidekiq//lib/sidekiq/logger.rb#64
 class Sidekiq::Logger::Formatters::WithoutTimestamp < ::Sidekiq::Logger::Formatters::Pretty
-  # source://sidekiq//lib/sidekiq/logger.rb#58
+  # source://sidekiq//lib/sidekiq/logger.rb#65
   def call(severity, time, program_name, message); end
 end
 
@@ -1581,21 +1543,21 @@ end
 # source://sidekiq//lib/sidekiq.rb#42
 Sidekiq::NAME = T.let(T.unsafe(nil), String)
 
-# source://sidekiq//lib/sidekiq/rails.rb#11
+# source://sidekiq//lib/sidekiq/rails.rb#10
 class Sidekiq::Rails < ::Rails::Engine; end
 
-# source://sidekiq//lib/sidekiq/rails.rb#12
+# source://sidekiq//lib/sidekiq/rails.rb#11
 class Sidekiq::Rails::Reloader
-  # source://sidekiq//lib/sidekiq/rails.rb#13
+  # source://sidekiq//lib/sidekiq/rails.rb#12
   def initialize(app = T.unsafe(nil)); end
 
-  # source://sidekiq//lib/sidekiq/rails.rb#17
+  # source://sidekiq//lib/sidekiq/rails.rb#16
   def call; end
 
-  # source://sidekiq//lib/sidekiq/rails.rb#24
+  # source://sidekiq//lib/sidekiq/rails.rb#23
   def inspect; end
 
-  # source://sidekiq//lib/sidekiq/rails.rb#28
+  # source://sidekiq//lib/sidekiq/rails.rb#27
   def to_hash; end
 end
 
@@ -1882,17 +1844,17 @@ class Sidekiq::TransactionAwareClient
 
   # @return [Boolean]
   #
-  # source://sidekiq//lib/sidekiq/transaction_aware_client.rb#12
+  # source://sidekiq//lib/sidekiq/transaction_aware_client.rb#18
   def batching?; end
 
-  # source://sidekiq//lib/sidekiq/transaction_aware_client.rb#16
+  # source://sidekiq//lib/sidekiq/transaction_aware_client.rb#22
   def push(item); end
 
   # We don't provide transactionality for push_bulk because we don't want
   # to hold potentially hundreds of thousands of job records in memory due to
   # a long running enqueue process.
   #
-  # source://sidekiq//lib/sidekiq/transaction_aware_client.rb#31
+  # source://sidekiq//lib/sidekiq/transaction_aware_client.rb#37
   def push_bulk(items); end
 end
 
