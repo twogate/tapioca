@@ -1016,6 +1016,8 @@ module Tapioca
             create_opt_param('string_query', type: 'String', default: 'nil'),
           ] + constant.column_names.map do |column_name|
             create_kw_opt_param(column_name, type: 'T.any(String, Integer, Symbol, T::Boolean, NilClass, T::Array[T.any(String, Integer, Symbol)], ActiveRecord::AssociationRelation, ActiveRecord::Relation)', default: 'nil')
+          end + constant.reflect_on_all_associations(:belongs_to).map(&:name).map do |association_name|
+            create_kw_opt_param(association_name, type: 'T.any(NilClass, ActiveRecord::Base, ActiveRecord::AssociationRelation, ActiveRecord::Relation, T::Array[ActiveRecord::Base], T::Hash[T.any(String, Symbol), T.untyped])', default: 'nil')
           end + [
             create_kw_rest_param('nested', type: 'T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))'),
           ]
