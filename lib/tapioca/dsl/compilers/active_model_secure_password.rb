@@ -93,8 +93,14 @@ module Tapioca
           extend T::Sig
 
           # @override
-          #: -> T::Enumerable[Module]
+          #: -> T::Enumerable[T::Module[top]]
           def gather_constants
+            # In some versions of Rails 8.1, `ActiveModel::SecurePassword` uses `Numeric#minutes`
+            # which isn't explicitly required in the gem, and it might not be loaded already.
+            # We might need to require it before referencing the constant to avoid a NoMethodError when
+            # the constant is autoloaded.
+            require "active_support/core_ext/numeric/time" unless defined?(1.minutes)
+
             # This selects all classes that are `ActiveModel::SecurePassword::ClassMethods === klass`.
             # In other words, we select all classes that have `ActiveModel::SecurePassword::ClassMethods`
             # as an ancestor of its singleton class, i.e. all classes that have extended the

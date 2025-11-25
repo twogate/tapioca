@@ -19,12 +19,12 @@ module Tapioca
             ancestors << block
           end
 
-          #: (Module mod) -> Array[^-> void]
+          #: (T::Module[top] mod) -> Array[^-> void]
           def required_ancestors_blocks_by(mod)
             @required_ancestors_map[mod] || []
           end
 
-          #: (Module mod) -> Array[untyped]
+          #: (T::Module[top] mod) -> Array[untyped]
           def required_ancestors_by(mod)
             blocks = required_ancestors_blocks_by(mod)
             blocks.map do |block|
@@ -52,7 +52,7 @@ end
 
 module T
   module Helpers
-    prepend(Module.new do
+    prepend(::Module.new do
       def requires_ancestor(&block)
         # We can't directly call the block since the ancestor might not be loaded yet.
         # We save the block in the map and will resolve it later.

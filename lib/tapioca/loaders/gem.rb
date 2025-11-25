@@ -9,7 +9,13 @@ module Tapioca
       class << self
         extend T::Sig
 
-        #: (bundle: Gemfile, prerequire: String?, postrequire: String, default_command: String, halt_upon_load_error: bool) -> void
+        #: (
+        #|   bundle: Gemfile,
+        #|   prerequire: String?,
+        #|   postrequire: String,
+        #|   default_command: String,
+        #|   halt_upon_load_error: bool
+        #| ) -> void
         def load_application(bundle:, prerequire:, postrequire:, default_command:, halt_upon_load_error:)
           loader = new(
             bundle: bundle,
@@ -30,7 +36,13 @@ module Tapioca
 
       protected
 
-      #: (bundle: Gemfile, prerequire: String?, postrequire: String, default_command: String, halt_upon_load_error: bool) -> void
+      #: (
+      #|   bundle: Gemfile,
+      #|   prerequire: String?,
+      #|   postrequire: String,
+      #|   default_command: String,
+      #|   halt_upon_load_error: bool
+      #| ) -> void
       def initialize(bundle:, prerequire:, postrequire:, default_command:, halt_upon_load_error:)
         super()
 
@@ -44,12 +56,19 @@ module Tapioca
       #: -> void
       def require_gem_file
         say("Requiring all gems to prepare for compiling... ")
-        begin
+
+        bundle_loaded = true #: bool
+
+        Runtime.with_disabled_exits do
           load_bundle(@bundle, @prerequire, @postrequire, @halt_upon_load_error)
         rescue LoadError => e
+          bundle_loaded = false
           explain_failed_require(@postrequire, e)
-          exit(1)
         end
+
+        # Can't call exit in the rescue block above, since it will be disabled,
+        # so we check the flag after the block.
+        exit(1) unless bundle_loaded
 
         Runtime::Trackers::Autoload.eager_load_all!
 

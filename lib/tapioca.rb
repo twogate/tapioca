@@ -9,21 +9,6 @@ module Tapioca
 
   @traces = [] #: Array[TracePoint]
 
-  class << self
-    extend T::Sig
-
-    #: [Result] { -> Result } -> Result
-    def silence_warnings(&blk)
-      original_verbosity = $VERBOSE
-      $VERBOSE = nil
-      ::Gem::DefaultUserInteraction.use_ui(::Gem::SilentUI.new) do
-        blk.call
-      end
-    ensure
-      $VERBOSE = original_verbosity
-    end
-  end
-
   class Error < StandardError; end
 
   LIB_ROOT_DIR = T.must(__dir__) #: String

@@ -22,7 +22,9 @@ module Tapioca
           class << self
             extend T::Sig
 
-            #: (Hash[String, untyped] options) { (String value, ColumnTypeOption default_column_type_option) -> void } -> ColumnTypeOption
+            #: (
+            #|   Hash[String, untyped] options,
+            #| ) { (String value, ColumnTypeOption default_column_type_option) -> void } -> ColumnTypeOption
             def from_options(options, &block)
               column_type_option = Persisted
               value = options["ActiveRecordColumnTypes"]
@@ -152,8 +154,10 @@ module Tapioca
           when ActiveRecord::Type::Serialized
             serialized_column_type(column_type)
           when ->(type) {
-                 defined?(ActiveRecord::Normalization::NormalizedValueType) &&
-                   ActiveRecord::Normalization::NormalizedValueType === type
+                 (defined?(ActiveRecord::Normalization::NormalizedValueType) &&
+                   ActiveRecord::Normalization::NormalizedValueType === type) ||
+                   (defined?(ActiveModel::Attributes::Normalization::NormalizedValueType) &&
+                     ActiveModel::Attributes::Normalization::NormalizedValueType === type)
                }
             type_for_activerecord_value(column_type.cast_type, column_nullability:)
           when ->(type) {

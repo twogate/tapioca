@@ -998,7 +998,7 @@ module Tapioca
                 end
               end
 
-              sig { override.returns(T::Enumerable[Module]) }
+              sig { override.returns(T::Enumerable[T::Module[T.anything]]) }
               def self.gather_constants
                 [::Post]
               end
@@ -1022,7 +1022,7 @@ module Tapioca
                 end
               end
 
-              sig { override.returns(T::Enumerable[Module]) }
+              sig { override.returns(T::Enumerable[T::Module[T.anything]]) }
               def self.gather_constants
                 [::Post]
               end
@@ -1116,7 +1116,7 @@ module Tapioca
                   end
                 end
 
-                sig { override.returns(T::Enumerable[Module]) }
+                sig { override.returns(T::Enumerable[T::Module[T.anything]]) }
                 def self.gather_constants
                   [Job]
                 end
@@ -1246,7 +1246,7 @@ module Tapioca
                   end
                 end
 
-                sig { override.returns(T::Enumerable[Module]) }
+                sig { override.returns(T::Enumerable[T::Module[T.anything]]) }
                 def self.gather_constants
                   [Job]
                 end
@@ -1416,7 +1416,7 @@ module Tapioca
                   end
                 end
 
-                sig { override.returns(T::Enumerable[Module]) }
+                sig { override.returns(T::Enumerable[T::Module[T.anything]]) }
                 def self.gather_constants
                   [Job, Post, User]
                 end
@@ -1479,7 +1479,7 @@ module Tapioca
                   end
                 end
 
-                sig { override.returns(T::Enumerable[Module]) }
+                sig { override.returns(T::Enumerable[T::Module[T.anything]]) }
                 def self.gather_constants
                   [Post, Job]
                 end
@@ -1845,7 +1845,9 @@ module Tapioca
         end
 
         it "generates RBIs for ActiveResource containing arbitrary constants, and referenced by file path" do
-          @project.require_real_gem("activeresource")
+          # locking to 6.1.4 to avoid breaking changes in later versions
+          @project.require_real_gem("activeresource", "6.1.4")
+          @project.require_real_gem("activemodel", "8.0.0")
           @project.bundle_install!
           @project.write!("lib/post.rb", <<~RUBY)
             require "active_resource"
@@ -2145,7 +2147,7 @@ module Tapioca
                   end
                 end
 
-                sig { override.returns(T::Enumerable[Module]) }
+                sig { override.returns(T::Enumerable[T::Module[T.anything]]) }
                 def self.gather_constants
                   [::Post]
                 end
@@ -2220,7 +2222,7 @@ module Tapioca
                 end
               end
 
-              sig { override.returns(T::Enumerable[Module]) }
+              sig { override.returns(T::Enumerable[T::Module[T.anything]]) }
               def self.gather_constants
                 [::Post]
               end
@@ -2398,7 +2400,7 @@ module Tapioca
 
                     ConstantType = type_member {{ fixed: T.class_of(Encryptable) }}
 
-                    sig { override.returns(T::Enumerable[Module]) }
+                    sig { override.returns(T::Enumerable[T::Module[T.anything]]) }
                     def self.gather_constants
                       # Collect all the classes that include Encryptable
                       all_classes.select { |c| c < ::Encryptable }
@@ -2553,7 +2555,7 @@ module Tapioca
 
                   ConstantType = type_member {{ fixed: T.class_of(Encryptable) }}
 
-                  sig { override.returns(T::Enumerable[Module]) }
+                  sig { override.returns(T::Enumerable[T::Module[T.anything]]) }
                   def self.gather_constants
                     # Collect all the classes that include Encryptable
                     all_classes.select { |c| c < ::Encryptable }

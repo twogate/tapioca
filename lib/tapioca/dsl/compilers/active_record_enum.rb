@@ -13,7 +13,7 @@ module Tapioca
       #
       # ~~~rb
       # class Post < ApplicationRecord
-      #   enum title_type: %i(book all web), _suffix: :title
+      #   enum :title_type, %i(book all web), suffix: :title
       # end
       # ~~~
       #
@@ -78,7 +78,7 @@ module Tapioca
           extend T::Sig
 
           # @override
-          #: -> T::Enumerable[Module]
+          #: -> T::Enumerable[T::Module[top]]
           def gather_constants
             descendants_of(::ActiveRecord::Base)
           end
