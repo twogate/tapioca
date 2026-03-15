@@ -122,7 +122,6 @@ module Tapioca
       # ~~~
       #: [ConstantType = singleton(ActiveRecord::Base)]
       class ActiveRecordColumns < Compiler
-        extend T::Sig
         include Helpers::ActiveRecordConstantsHelper
 
         # @override
@@ -163,10 +162,8 @@ module Tapioca
         end
 
         class << self
-          extend T::Sig
-
           # @override
-          #: -> T::Enumerable[T::Module[top]]
+          #: -> Enumerable[T::Module[top]]
           def gather_constants
             descendants_of(::ActiveRecord::Base).reject(&:abstract_class?)
           end

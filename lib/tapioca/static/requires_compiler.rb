@@ -4,8 +4,6 @@
 module Tapioca
   module Static
     class RequiresCompiler
-      extend T::Sig
-
       #: (String sorbet_path) -> void
       def initialize(sorbet_path)
         @sorbet_path = sorbet_path
@@ -40,7 +38,7 @@ module Tapioca
         end.sort.uniq
       end
 
-      #: (String file_path) -> T::Enumerable[String]
+      #: (String file_path) -> Enumerable[String]
       def collect_requires(file_path)
         File.binread(file_path).lines.filter_map do |line|
           /^\s*require\s*(\(\s*)?['"](?<name>[^'"]+)['"](\s*\))?/.match(line) { |m| m["name"] }

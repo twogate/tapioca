@@ -64,7 +64,7 @@ module Tapioca
       [dependencies, missing_specs]
     end
 
-    #: -> [T::Enumerable[Spec], Array[String]]
+    #: -> [Enumerable[Spec], Array[String]]
     def materialize_deps
       deps = definition.locked_gems.dependencies.except(*@excluded_gems).values
       resolve = definition.resolve
@@ -107,8 +107,6 @@ module Tapioca
       include GemHelper
 
       class << self
-        extend T::Sig
-
         #: -> Hash[String, Gemfile::GemSpec]
         def spec_lookup_by_file_path
           @lookup ||= [*::Gem::Specification.default_stubs, *::Gem::Specification.stubs]

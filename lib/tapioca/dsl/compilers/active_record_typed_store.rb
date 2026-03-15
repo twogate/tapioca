@@ -83,8 +83,6 @@ module Tapioca
       # ~~~
       #: [ConstantType = singleton(::ActiveRecord::Base)]
       class ActiveRecordTypedStore < Compiler
-        extend T::Sig
-
         # @override
         #: -> void
         def decorate
@@ -108,10 +106,8 @@ module Tapioca
         end
 
         class << self
-          extend T::Sig
-
           # @override
-          #: -> T::Enumerable[T::Module[top]]
+          #: -> Enumerable[T::Module[top]]
           def gather_constants
             descendants_of(::ActiveRecord::Base).select do |klass|
               klass.include?(ActiveRecord::TypedStore::Behavior)

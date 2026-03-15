@@ -60,8 +60,6 @@ module Tapioca
       # ~~~
       #: [ConstantType = singleton(::SmartProperties)]
       class SmartProperties < Compiler
-        extend T::Sig
-
         # @override
         #: -> void
         def decorate
@@ -81,10 +79,8 @@ module Tapioca
         end
 
         class << self
-          extend T::Sig
-
           # @override
-          #: -> T::Enumerable[T::Module[top]]
+          #: -> Enumerable[T::Module[top]]
           def gather_constants
             all_modules.select do |c|
               name_of(c) &&

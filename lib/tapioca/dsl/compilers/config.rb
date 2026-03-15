@@ -42,8 +42,6 @@ module Tapioca
       # ```
       #: [ConstantType = T::Module[top]]
       class Config < Compiler
-        extend T::Sig
-
         CONFIG_OPTIONS_SUFFIX = "ConfigOptions"
 
         # @override
@@ -93,10 +91,8 @@ module Tapioca
         end
 
         class << self
-          extend T::Sig
-
           # @override
-          #: -> T::Enumerable[T::Module[top]]
+          #: -> Enumerable[T::Module[top]]
           def gather_constants
             name = ::Config.const_name
             return [] unless Object.const_defined?(name)

@@ -63,8 +63,6 @@ module Tapioca
       # ~~~
       #: [ConstantType = singleton(::ActionController::Base)]
       class ActionControllerHelpers < Compiler
-        extend T::Sig
-
         # @override
         #: -> void
         def decorate
@@ -118,10 +116,8 @@ module Tapioca
         end
 
         class << self
-          extend T::Sig
-
           # @override
-          #: -> T::Enumerable[T::Module[top]]
+          #: -> Enumerable[T::Module[top]]
           def gather_constants
             descendants_of(::ActionController::Base).select(&:name).select do |klass|
               klass.const_defined?(:HelperMethods, false)

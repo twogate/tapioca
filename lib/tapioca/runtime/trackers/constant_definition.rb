@@ -11,7 +11,6 @@ module Tapioca
       module ConstantDefinition
         extend Tracker
         extend Reflection
-        extend T::Sig
 
         @class_files = {}.compare_by_identity #: Hash[T::Module[top], Set[SourceLocation]]
 
@@ -36,7 +35,7 @@ module Tapioca
             ])
           end
 
-          (@class_files[key] ||= Set.new) << loc
+          ConstantDefinition.register(key, loc)
         end
 
         @creturn_tracepoint = TracePoint.trace(:c_return) do |tp|
@@ -46,12 +45,10 @@ module Tapioca
           next unless Module === key
 
           loc = build_source_location(tp, caller_locations)
-          (@class_files[key] ||= Set.new) << loc
+          ConstantDefinition.register(key, loc)
         end
 
         class << self
-          extend T::Sig
-
           def disable!
             @class_tracepoint.disable
             @creturn_tracepoint.disable
@@ -65,6 +62,22 @@ module Tapioca
             lineno = file && File.identical?(file, tp.path) ? tp.lineno : (line || 0)
 
             SourceLocation.from_loc([file || "", lineno])
+          end
+
+          def register(constant, loc)
+            return unless loc
+
+            (@class_files[constant] ||= Set.new) << loc
+          end
+
+          def register_cname(cname, namespace, locations)
+            return if namespace.autoload?(cname)
+
+            key = Reflection.constantize(cname, namespace: namespace, inherit: true)
+            return unless Module === key
+
+            loc = Reflection.resolve_loc(locations)
+            ConstantDefinition.register(key, loc)
           end
 
           # Returns the files in which this class or module was opened. Doesn't know
@@ -83,4 +96,13 @@ module Tapioca
       end
     end
   end
+end
+
+class Module
+  prepend(::Module.new do
+    def const_added(cname)
+      ::Tapioca::Runtime::Trackers::ConstantDefinition.register_cname(cname, self, Kernel.caller_locations)
+      super(cname)
+    end
+  end)
 end

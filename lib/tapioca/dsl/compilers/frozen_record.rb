@@ -60,8 +60,6 @@ module Tapioca
       # ~~~
       #: [ConstantType = (singleton(::FrozenRecord::Base) & Extensions::FrozenRecord)]
       class FrozenRecord < Compiler
-        extend T::Sig
-
         # @override
         #: -> void
         def decorate
@@ -85,10 +83,8 @@ module Tapioca
         end
 
         class << self
-          extend T::Sig
-
           # @override
-          #: -> T::Enumerable[T::Module[top]]
+          #: -> Enumerable[T::Module[top]]
           def gather_constants
             descendants_of(::FrozenRecord::Base).reject(&:abstract_class?)
           end

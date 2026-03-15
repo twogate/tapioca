@@ -5,7 +5,6 @@ module Tapioca
   # @requires_ancestor: Thor::Shell
   # @requires_ancestor: SorbetHelper
   module RBIFilesHelper
-    extend T::Sig
     #: (RBI::Index index, String kind, String file) -> void
     def index_rbi(index, kind, file)
       return unless File.exist?(file)
@@ -70,7 +69,7 @@ module Tapioca
     #|   dsl_dir: String,
     #|   auto_strictness: bool,
     #|   ?gems: Array[Gemfile::GemSpec],
-    #|   ?compilers: T::Enumerable[singleton(Dsl::Compiler)]
+    #|   ?compilers: Enumerable[singleton(Dsl::Compiler)]
     #| ) -> void
     def validate_rbi_files(command:, gem_dir:, dsl_dir:, auto_strictness:, gems: [], compilers: [])
       error_url_base = Spoom::Sorbet::Errors::DEFAULT_ERROR_URL_BASE

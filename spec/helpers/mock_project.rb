@@ -7,8 +7,6 @@ require "helpers/mock_gem"
 module Tapioca
   # A mock project used for testing purposes
   class MockProject < Spoom::Context
-    extend T::Sig
-
     # Path to Tapioca's source files
     TAPIOCA_PATH = (Pathname.new(__FILE__) / ".." / ".." / "..").to_s #: String
 
@@ -35,6 +33,8 @@ module Tapioca
     def require_default_gems
       require_real_gem("ostruct")
       require_real_gem("logger")
+      # Rails 8.1.1 doesn't support minitest 6.0 which causes errors
+      require_real_gem("minitest", "< 6.0")
     end
 
     # Default Gemfile contents requiring only Tapioca

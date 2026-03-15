@@ -6,8 +6,6 @@ module Tapioca
     # @abstract
     #: [ConstantType < T::Module[top]]
     class Compiler
-      extend T::Sig
-
       include RBIHelper
       include Runtime::Reflection
       extend Runtime::Reflection
@@ -24,15 +22,13 @@ module Tapioca
       @@requested_constants = [] #: Array[T::Module[top]] # rubocop:disable Style/ClassVars
 
       class << self
-        extend T::Sig
-
         #: (T::Module[top] constant) -> bool
         def handles?(constant)
           processable_constants.include?(constant)
         end
 
         # @abstract
-        #: -> T::Enumerable[T::Module[top]]
+        #: -> Enumerable[T::Module[top]]
         def gather_constants = raise NotImplementedError, "Abstract method called"
 
         #: -> Set[T::Module[top]]
@@ -68,18 +64,18 @@ module Tapioca
           end
         end
 
-        #: -> T::Enumerable[Class[top]]
+        #: -> Enumerable[Class[top]]
         def all_classes
-          @all_classes ||= all_modules.grep(Class).freeze #: T::Enumerable[Class[top]]?
+          @all_classes ||= all_modules.grep(Class).freeze #: Enumerable[Class[top]]?
         end
 
-        #: -> T::Enumerable[T::Module[top]]
+        #: -> Enumerable[T::Module[top]]
         def all_modules
           @all_modules ||= if @@requested_constants.any?
             @@requested_constants.grep(Module)
           else
             ObjectSpace.each_object(Module).to_a
-          end.freeze #: T::Enumerable[T::Module[top]]?
+          end.freeze #: Enumerable[T::Module[top]]?
         end
       end
 

@@ -151,7 +151,6 @@ module Tapioca
       # ~~~
       #: [ConstantType = singleton(::ActiveRecord::Base)]
       class ActiveRecordRelations < Compiler
-        extend T::Sig
         include Helpers::ActiveRecordConstantsHelper
         include SorbetHelper
 
@@ -181,10 +180,8 @@ module Tapioca
         end
 
         class << self
-          extend T::Sig
-
           # @override
-          #: -> T::Enumerable[T::Module[top]]
+          #: -> Enumerable[T::Module[top]]
           def gather_constants
             ActiveRecord::Base.descendants.reject(&:abstract_class?)
           end
@@ -224,7 +221,7 @@ module Tapioca
           batch_size: ["Integer", "1000"],
           of: ["Integer", "1000"],
           error_on_ignore: ["T.untyped", "nil"],
-          order: ["Symbol", ":asc"],
+          order: ["T.any(Symbol, T::Array[Symbol])", ":asc"],
           cursor: ["T.untyped", "primary_key"],
           use_ranges: ["T.untyped", "nil"],
         } #: Hash[Symbol, [String, String]]
@@ -541,6 +538,7 @@ module Tapioca
         #: -> void
         def create_relation_methods
           create_relation_method("all")
+          create_unscoped_relation_method
 
           QUERY_METHODS.each do |method_name|
             case method_name
@@ -604,47 +602,9 @@ module Tapioca
 
         #: -> void
         def create_association_relation_methods
-          returning_type = "T.nilable(T.any(T::Array[Symbol], FalseClass))"
-          unique_by_type = "T.nilable(T.any(T::Array[Symbol], Symbol))"
-
-          ASSOCIATION_METHODS.each do |method_name|
-            case method_name
-            when :insert_all, :insert_all!, :upsert_all
-              parameters = [
-                create_param("attributes", type: "T::Array[Hash]"),
-                create_kw_opt_param("returning", type: returning_type, default: "nil"),
-              ]
-
-              # Bang methods don't have the `unique_by` parameter
-              unless bang_method?(method_name)
-                parameters << create_kw_opt_param("unique_by", type: unique_by_type, default: "nil")
-              end
-
-              association_relation_methods_module.create_method(
-                method_name.to_s,
-                parameters: parameters,
-                return_type: "ActiveRecord::Result",
-              )
-            when :insert, :insert!, :upsert
-              parameters = [
-                create_param("attributes", type: "Hash"),
-                create_kw_opt_param("returning", type: returning_type, default: "nil"),
-              ]
-
-              # Bang methods don't have the `unique_by` parameter
-              unless bang_method?(method_name)
-                parameters << create_kw_opt_param("unique_by", type: unique_by_type, default: "nil")
-              end
-
-              association_relation_methods_module.create_method(
-                method_name.to_s,
-                parameters: parameters,
-                return_type: "ActiveRecord::Result",
-              )
-            when :proxy_association
-              # skip - private method
-            end
-          end
+          # skips insert/upsert methods - these methods' signatures aren't model-specific and don't need to be generated dynamically
+          # also skips proxy_association method - it's a private method
+          # but there could be other association methods that we need to generate
         end
 
         #: -> void
@@ -953,44 +913,8 @@ module Tapioca
                   sig.return_type = constant_name
                 end
               end
-            when :insert_all, :insert_all!, :upsert_all # insert all methods
-              returning_type = "T.nilable(T.any(T::Array[Symbol], FalseClass))"
-              unique_by_type = "T.nilable(T.any(T::Array[Symbol], Symbol))"
-
-              parameters = [
-                create_param("attributes", type: "T::Array[Hash]"),
-                create_kw_opt_param("returning", type: returning_type, default: "nil"),
-              ]
-
-              # Bang methods don't have the `unique_by` parameter
-              unless bang_method?(method_name)
-                parameters << create_kw_opt_param("unique_by", type: unique_by_type, default: "nil")
-              end
-
-              common_relation_methods_module.create_method(
-                method_name.to_s,
-                parameters: parameters,
-                return_type: "ActiveRecord::Result",
-              )
-            when :insert, :insert!, :upsert # insert methods
-              returning_type = "T.nilable(T.any(T::Array[Symbol], FalseClass))"
-              unique_by_type = "T.nilable(T.any(T::Array[Symbol], Symbol))"
-
-              parameters = [
-                create_param("attributes", type: "Hash"),
-                create_kw_opt_param("returning", type: returning_type, default: "nil"),
-              ]
-
-              # Bang methods don't have the `unique_by` parameter
-              unless bang_method?(method_name)
-                parameters << create_kw_opt_param("unique_by", type: unique_by_type, default: "nil")
-              end
-
-              common_relation_methods_module.create_method(
-                method_name.to_s,
-                parameters: parameters,
-                return_type: "ActiveRecord::Result",
-              )
+            when :insert_all, :insert_all!, :upsert_all, :insert, :insert!, :upsert # insert methods
+              # skip - these methods' signatures aren't model-specific and don't need to be generated dynamically
             when :delete, :destroy
               # For these cases, it is valid to pass the above kind of things, but also:
               # - a model identifier, which can be:
@@ -1021,7 +945,7 @@ module Tapioca
               common_relation_methods_module.create_method(
                 method_name.to_s,
                 parameters: [
-                  create_param("args", type: "T.untyped"),
+                  create_rest_param("args", type: "T.untyped"),
                 ],
                 return_type: method_name == :delete_by ? "Integer" : "T::Array[#{constant_name}]",
               )
@@ -1050,7 +974,7 @@ module Tapioca
           when :find_each
             [constant_name, "T::Enumerator[#{constant_name}]"]
           when :find_in_batches
-            ["T::Array[#{constant_name}]", "T::Enumerator[T::Enumerator[#{constant_name}]]"]
+            ["T::Array[#{constant_name}]", "T::Enumerator[T::Array[#{constant_name}]]"]
           when :in_batches
             [RelationClassName, "::ActiveRecord::Batches::BatchEnumerator"]
           else
@@ -1156,6 +1080,35 @@ module Tapioca
             parameters: parameters,
             return_type: association_return_type,
           )
+        end
+
+        #: -> void
+        def create_unscoped_relation_method
+          relation_methods_module.create_method("unscoped") do |method|
+            method.add_block_param("block")
+
+            method.add_sig do |sig|
+              sig.return_type = RelationClassName
+            end
+
+            method.add_sig(type_params: ["U"]) do |sig|
+              sig.add_param("block", "T.proc.returns(T.type_parameter(:U))")
+              sig.return_type = "T.type_parameter(:U)"
+            end
+          end
+
+          association_relation_methods_module.create_method("unscoped") do |method|
+            method.add_block_param("block")
+
+            method.add_sig do |sig|
+              sig.return_type = AssociationRelationClassName
+            end
+
+            method.add_sig(type_params: ["U"]) do |sig|
+              sig.add_param("block", "T.proc.returns(T.type_parameter(:U))")
+              sig.return_type = "T.type_parameter(:U)"
+            end
+          end
         end
       end
     end

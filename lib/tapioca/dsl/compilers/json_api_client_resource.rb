@@ -81,8 +81,6 @@ module Tapioca
       # ~~~
       #: [ConstantType = singleton(::JsonApiClient::Resource)]
       class JsonApiClientResource < Compiler
-        extend T::Sig
-
         # @override
         #: -> void
         def decorate
@@ -106,10 +104,8 @@ module Tapioca
         end
 
         class << self
-          extend T::Sig
-
           # @override
-          #: -> T::Enumerable[T::Module[top]]
+          #: -> Enumerable[T::Module[top]]
           def gather_constants
             all_modules.select do |c|
               name_of(c) && ::JsonApiClient::Resource > c
@@ -142,17 +138,7 @@ module Tapioca
           type = ::JsonApiClient::Schema::TypeFactory.type_for(property.type)
           return "T.untyped" if type.nil?
 
-          sorbet_type = if type.respond_to?(:sorbet_type)
-            line, file = type.method(:sorbet_type).source_location
-
-            $stderr.puts <<~MESSAGE
-              WARNING: `#sorbet_type` is deprecated. Please rename your method to `#__tapioca_type`."
-
-              Defined on line #{line} of #{file}
-            MESSAGE
-
-            type.sorbet_type
-          elsif type.respond_to?(:__tapioca_type)
+          tapioca_type = if type.respond_to?(:__tapioca_type)
             type.__tapioca_type
           elsif type == ::JsonApiClient::Schema::Types::Integer
             "::Integer"
@@ -171,9 +157,9 @@ module Tapioca
           end
 
           if property.default.nil?
-            as_nilable_type(sorbet_type)
+            as_nilable_type(tapioca_type)
           else
-            sorbet_type
+            tapioca_type
           end
         end
 

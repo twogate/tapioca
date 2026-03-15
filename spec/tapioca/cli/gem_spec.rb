@@ -271,8 +271,8 @@ module Tapioca
         end
 
         it "must generate RBI for a default gem" do
-          gem_name = "cgi"
-          gem_top_level_constant = "class CGI"
+          gem_name = "singleton"
+          gem_top_level_constant = "module Singleton"
 
           gem_spec = ::Gem::Specification.default_stubs("*.gemspec").find do |spec|
             spec.name == gem_name && spec.default_gem?
@@ -767,10 +767,14 @@ module Tapioca
 
         it "must not generate RBIs for missing gem specs" do
           @project.write_gemfile!(<<~GEMFILE, append: true)
-            platform :rbx do
+            platform :jruby do
               gem "sidekiq", "=7.1.2"
             end
           GEMFILE
+
+          # We need to add the platform to the lock file so that bundler includes the gem
+          # but it won't be materializable on the current platform (since we are not on JRuby)
+          @project.exec("bundle lock --add-platform jruby")
 
           @project.bundle_install!
 
@@ -1390,7 +1394,7 @@ module Tapioca
         end
 
         it "does not crash while tracking `rbtrace` constants" do
-          @project.require_real_gem("rbtrace", "0.4.14")
+          @project.require_real_gem("rbtrace")
           @project.bundle_install!
           result = @project.tapioca("gem rbtrace")
           assert_empty_stderr(result)

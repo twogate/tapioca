@@ -37,8 +37,6 @@ module Tapioca
       # ~~~
       #: [ConstantType = singleton(GraphQL::Schema::Mutation)]
       class GraphqlMutation < Compiler
-        extend T::Sig
-
         # @override
         #: -> void
         def decorate
@@ -71,10 +69,8 @@ module Tapioca
         end
 
         class << self
-          extend T::Sig
-
           # @override
-          #: -> T::Enumerable[T::Module[top]]
+          #: -> Enumerable[T::Module[top]]
           def gather_constants
             all_classes.select { |c| GraphQL::Schema::Mutation > c && GraphQL::Schema::RelayClassicMutation != c }
           end
