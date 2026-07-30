@@ -28,17 +28,17 @@ Gem::Specification.new do |spec|
   spec.add_dependency("netrc", ">= 0.11.0")
   spec.add_dependency("parallel", ">= 1.21.0")
   spec.add_dependency("require-hooks", ">= 0.2.2")
-  spec.add_dependency("sorbet-static-and-runtime", ">= 0.5.11087")
+  spec.add_dependency("rubydex", ">= 0.1.0.beta10")
+  spec.add_dependency("sorbet-static-and-runtime", ">= 0.6.12698")
   spec.add_dependency("thor", ">= 1.2.0")
-  spec.add_dependency("yard-sorbet")
 
   # Tapioca requires a specific minimum versions of RBI and Spoom
   # to ensure that the RBS comments are translated correctly.
   spec.add_dependency("rbi", ">= 0.3.7")
-  spec.add_dependency("spoom", ">= 1.7.9")
+  spec.add_dependency("spoom", ">= 1.7.16")
   # We need this to be ported to the RBS 4.0 branch before we can remove this dependency:
   # https://github.com/ruby/rbs/pull/2601
   spec.add_dependency("tsort") # Until rbs supports Ruby 4.0 with tsort extracted to bundled gems
 
-  spec.required_ruby_version = ">= 3.2"
+  spec.required_ruby_version = ">= 3.3"
 end

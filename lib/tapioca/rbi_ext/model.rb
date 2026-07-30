@@ -3,7 +3,7 @@
 
 module RBI
   class Tree
-    #: (T::Module[top] constant) ?{ (Scope scope) -> void } -> Scope
+    #: (Module[top] constant) ?{ (Scope scope) -> void } -> Scope
     def create_path(constant, &block)
       constant_name = Tapioca::Runtime::Reflection.name_of(constant)
       raise "given constant does not have a name" unless constant_name
@@ -77,7 +77,11 @@ module RBI
         # If there is no block, and the params and return type have not been supplied, then
         # we create a single signature with the given parameters and return type
         params = parameters.map { |param| RBI::SigParam.new(param.param.name.to_s, param.type) }
-        sigs << RBI::Sig.new(params: params, return_type: return_type || "T.untyped")
+        return_type ||= "T.untyped"
+        type_params = Tapioca::RBIHelper.extract_type_parameters(parameters.map(&:type).append(return_type))
+
+        sig = RBI::Sig.new(params: params, return_type: return_type, type_params: type_params)
+        sigs << sig
       end
 
       method = RBI::Method.new(

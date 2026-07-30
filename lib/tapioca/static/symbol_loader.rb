@@ -18,6 +18,19 @@ module Tapioca
           T.must(@payload_symbols)
         end
 
+        #: (Array[Pathname] paths) -> Rubydex::Graph
+        def graph_from_paths(paths)
+          graph = Rubydex::Graph.new
+          graph.index_all(paths.map(&:to_s))
+          graph.resolve
+          graph
+        end
+
+        #: (Gemfile::GemSpec gem) -> Set[String]
+        def gem_symbols(gem)
+          symbols_from_paths(gem.files)
+        end
+
         #: (Gemfile::GemSpec gem) -> Set[String]
         def engine_symbols(gem)
           gem_engine = engines.find do |engine|
@@ -41,11 +54,6 @@ module Tapioca
           symbols_from_paths(paths)
         rescue
           Set.new
-        end
-
-        #: (Gemfile::GemSpec gem) -> Set[String]
-        def gem_symbols(gem)
-          symbols_from_paths(gem.files)
         end
 
         #: (Array[Pathname] paths) -> Set[String]
@@ -79,7 +87,25 @@ module Tapioca
 
         #: (String input, ?table_type: String) -> String
         def symbol_table_json_from(input, table_type: "symbol-table-json")
-          sorbet("--no-config", "--quiet", "--print=#{table_type}", input).out
+          supported_values = ["symbol-table-json", "symbol-table-full-json"]
+          unless supported_values.include?(table_type)
+            raise NotImplementedError, <<~MSG
+              Got an unsupported value for `table_type` (#{table_type.inspect}).
+              The only supported values are:
+                #{supported_values.map { |v| "- #{v}" }.join("\n")}
+
+              This is because we use `--stop-after=namer` as a performance optimization. Other print formats
+              may require running later stages of Sorbet's pipeline. Please adjust the `stop-after` accordingly.
+            MSG
+          end
+
+          sorbet(
+            "--no-config",
+            "--quiet",
+            "--print=#{table_type}",
+            "--stop-after=namer",
+            input,
+          ).out
         end
       end
     end

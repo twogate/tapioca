@@ -4,7 +4,7 @@
 module Tapioca
   module Dsl
     # @abstract
-    #: [ConstantType < T::Module[top]]
+    #: [ConstantType < Module[top]]
     class Compiler
       include RBIHelper
       include Runtime::Reflection
@@ -19,24 +19,24 @@ module Tapioca
       #: Hash[String, untyped]
       attr_reader :options
 
-      @@requested_constants = [] #: Array[T::Module[top]] # rubocop:disable Style/ClassVars
+      @@requested_constants = [] #: Array[Module[top]] # rubocop:disable Style/ClassVars
 
       class << self
-        #: (T::Module[top] constant) -> bool
+        #: (Module[top] constant) -> bool
         def handles?(constant)
           processable_constants.include?(constant)
         end
 
         # @abstract
-        #: -> Enumerable[T::Module[top]]
+        #: -> Enumerable[Module[top]]
         def gather_constants = raise NotImplementedError, "Abstract method called"
 
-        #: -> Set[T::Module[top]]
+        #: -> Set[Module[top]]
         def processable_constants
-          @processable_constants ||= T::Set[T::Module[T.anything]].new.compare_by_identity.merge(gather_constants) #: Set[T::Module[top]]?
+          @processable_constants ||= T::Set[T::Module[T.anything]].new.compare_by_identity.merge(gather_constants) #: Set[Module[top]]?
         end
 
-        #: (Array[T::Module[top]] constants) -> void
+        #: (Array[Module[top]] constants) -> void
         def requested_constants=(constants)
           @@requested_constants = constants # rubocop:disable Style/ClassVars
         end
@@ -69,13 +69,13 @@ module Tapioca
           @all_classes ||= all_modules.grep(Class).freeze #: Enumerable[Class[top]]?
         end
 
-        #: -> Enumerable[T::Module[top]]
+        #: -> Enumerable[Module[top]]
         def all_modules
           @all_modules ||= if @@requested_constants.any?
             @@requested_constants.grep(Module)
           else
             ObjectSpace.each_object(Module).to_a
-          end.freeze #: Enumerable[T::Module[top]]?
+          end.freeze #: Enumerable[Module[top]]?
         end
       end
 
@@ -124,10 +124,12 @@ module Tapioca
         signature.kwarg_types.each { |_, kwarg_type| params << kwarg_type.to_s }
 
         # rest parameter type
-        params << signature.rest_type.to_s if signature.has_rest
+        rest_type = signature.rest_type
+        params << rest_type.to_s if rest_type
 
         # keyrest parameter type
-        params << signature.keyrest_type.to_s if signature.has_keyrest
+        keyrest_type = signature.keyrest_type
+        params << keyrest_type.to_s if keyrest_type
 
         # special case `.void` in a proc
         unless signature.block_name.nil?
@@ -139,10 +141,13 @@ module Tapioca
 
       #: (RBI::Scope scope, (Method | UnboundMethod) method_def, ?class_method: bool) -> void
       def create_method_from_def(scope, method_def, class_method: false)
+        parameters = compile_method_parameters_to_rbi(method_def)
+        return_type = compile_method_return_type_to_rbi(method_def)
+
         scope.create_method(
           method_def.name.to_s,
-          parameters: compile_method_parameters_to_rbi(method_def),
-          return_type: compile_method_return_type_to_rbi(method_def),
+          parameters: parameters,
+          return_type: return_type,
           class_method: class_method,
         )
       end

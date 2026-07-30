@@ -14,7 +14,13 @@ module T::Private
     def self.sealed_module?(mod); end
   end
 
-  class Types::NotTyped < T::Types::Base; end
+  module Types
+    class NotTyped < T::Types::Base; end
+
+    module Void::Private
+      INSTANCE = T.let(T.unsafe(nil), T::Private::Types::Void)
+    end
+  end
 
   module Methods
     ARG_NOT_PROVIDED = T.let(T.unsafe(nil), Object)
@@ -53,6 +59,10 @@ module T::Private
       def finalized; end
       def finalized=(finalized); end
     end
+
+    class Signature
+      def initialize(method:, method_name:, raw_arg_types:, raw_return_type:, bind:, mode:, check_level:, on_failure:, parameters: T.unsafe(nil), override_allow_incompatible: T.unsafe(nil), defined_raw: T.unsafe(nil)); end
+    end
   end
 
   module DeclState
@@ -63,6 +73,14 @@ module T::Private
 end
 
 class T::Types::AttachedClassType < T::Types::Base; end
+
+class T::Types::Simple < T::Types::Base
+  def build_type; end
+end
+
+class T::Types::TypeVariable < T::Types::Base
+  def build_type; end
+end
 
 class T::Enum
   def values; end

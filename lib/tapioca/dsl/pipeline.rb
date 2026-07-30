@@ -7,13 +7,13 @@ module Tapioca
       #: Enumerable[singleton(Compiler)]
       attr_reader :active_compilers
 
-      #: Array[T::Module[top]]
+      #: Array[Module[top]]
       attr_reader :requested_constants
 
       #: Array[Pathname]
       attr_reader :requested_paths
 
-      #: Array[T::Module[top]]
+      #: Array[Module[top]]
       attr_reader :skipped_constants
 
       #: ^(String error) -> void
@@ -23,12 +23,12 @@ module Tapioca
       attr_reader :errors
 
       #: (
-      #|   requested_constants: Array[T::Module[top]],
+      #|   requested_constants: Array[Module[top]],
       #|   ?requested_paths: Array[Pathname],
       #|   ?requested_compilers: Array[singleton(Compiler)],
       #|   ?excluded_compilers: Array[singleton(Compiler)],
       #|   ?error_handler: ^(String error) -> void,
-      #|   ?skipped_constants: Array[T::Module[top]],
+      #|   ?skipped_constants: Array[Module[top]],
       #|   ?number_of_workers: Integer?,
       #|   ?compiler_options: Hash[String, untyped],
       #|   ?lsp_addon: bool
@@ -56,7 +56,7 @@ module Tapioca
         @errors = [] #: Array[String]
       end
 
-      #: [R] { (T::Module[top] constant, RBI::File rbi) -> R } -> Array[R]
+      #: [R] { (Module[top] constant, RBI::File rbi) -> R } -> Array[R]
       def run(&blk)
         constants_to_process = gather_constants(requested_constants, requested_paths, skipped_constants)
           .select { |c| Module === c } # Filter value constants out
@@ -64,6 +64,9 @@ module Tapioca
 
         # It's OK if there are no constants to process if we received a valid file/path.
         if constants_to_process.empty? && requested_paths.none? { |p| File.exist?(p) }
+          # When running within the add-on, return early so this expected case is not logged as an error
+          return [] if @lsp_addon
+
           report_error(<<~ERROR)
             No classes/modules can be matched for RBI generation.
             Please check that the requested classes/modules include processable DSL methods.
@@ -128,17 +131,17 @@ module Tapioca
       end
 
       #: (
-      #|   Array[T::Module[top]] requested_constants,
+      #|   Array[Module[top]] requested_constants,
       #|   Array[Pathname] requested_paths,
-      #|   Array[T::Module[top]] skipped_constants
-      #| ) -> Set[T::Module[top]]
+      #|   Array[Module[top]] skipped_constants
+      #| ) -> Set[Module[top]]
       def gather_constants(requested_constants, requested_paths, skipped_constants)
         Compiler.requested_constants = requested_constants
         constants = Set.new.compare_by_identity
         active_compilers.each do |compiler|
           constants.merge(compiler.processable_constants)
         end
-        constants = filter_anonymous_and_reloaded_constants(constants)
+        constants = filter_anonymous_constants(constants)
         constants -= skipped_constants
 
         unless requested_constants.empty? && requested_paths.empty?
@@ -153,36 +156,12 @@ module Tapioca
         constants
       end
 
-      #: (Set[T::Module[top]] constants) -> Set[T::Module[top]]
-      def filter_anonymous_and_reloaded_constants(constants)
-        # Group constants by their names
-        constants_by_name = constants
-          .group_by { |c| Runtime::Reflection.name_of(c) }
-          .select { |name, _| !name.nil? }
-
-        constants_by_name = T.cast(constants_by_name, T::Hash[String, T::Array[T::Module[T.anything]]])
-
-        # Find the constants that have been reloaded
-        reloaded_constants = constants_by_name.select { |_, constants| constants.size > 1 }.keys
-
-        unless reloaded_constants.empty? || @lsp_addon
-          reloaded_constant_names = reloaded_constants.map { |name| "`#{name}`" }.join(", ")
-
-          $stderr.puts("WARNING: Multiple constants with the same name: #{reloaded_constant_names}")
-          $stderr.puts("Make sure some object is not holding onto these constants during an app reload.")
-        end
-
-        # Look up all the constants back from their names. The resulting constant set will be the
-        # set of constants that are actually in memory with those names.
-        filtered_constants = constants_by_name
-          .keys
-          .map { |name| T.cast(Runtime::Reflection.constantize(name), T::Module[T.anything]) }
-          .select { |mod| Runtime::Reflection.constant_defined?(mod) }
-
-        Set.new.compare_by_identity.merge(filtered_constants)
+      #: (Set[Module[top]] constants) -> Set[Module[top]]
+      def filter_anonymous_constants(constants)
+        constants.keep_if { |constant| Runtime::Reflection.name_of(constant) }
       end
 
-      #: (T::Module[top] constant) -> RBI::File?
+      #: (Module[top] constant) -> RBI::File?
       def rbi_for_constant(constant)
         file = RBI::File.new(strictness: "true")
 

@@ -224,6 +224,77 @@ module Tapioca
               assert_equal(expected, rbi_for(:CreateComment))
             end
 
+            it "generates correct RBI for a list argument with a prepare method returning the same list type" do
+              add_ruby_file("create_comment.rb", <<~RUBY)
+                class CreateComment < GraphQL::Schema::Mutation
+                  extend T::Sig
+
+                  class << self
+                    extend T::Sig
+                    sig { params(tags: T::Array[String], _context: T.untyped).returns(T::Array[String]) }
+                    def prepare_tags(tags, _context)
+                      tags.map(&:downcase)
+                    end
+                  end
+
+                  argument :tags, [String], "Tags for the comment", prepare: :prepare_tags
+
+                  def resolve(tags:)
+                    # ...
+                  end
+                end
+              RUBY
+
+              expected = <<~RBI
+                # typed: strong
+
+                class CreateComment
+                  sig { params(tags: T::Array[::String]).returns(T.untyped) }
+                  def resolve(tags:); end
+                end
+              RBI
+
+              assert_equal(expected, rbi_for(:CreateComment))
+            end
+
+            it "generates correct RBI for a list argument with a prepare method that has no valid return type" do
+              add_ruby_file("create_comment.rb", <<~RUBY)
+                class CreateComment < GraphQL::Schema::Mutation
+                  extend T::Sig
+
+                  class << self
+                    extend T::Sig
+                    sig { params(tags: T::Array[String], _context: T.untyped).void }
+                    def prepare_tags_void(tags, _context)
+                      tags.map(&:downcase)
+                    end
+
+                    def prepare_tags_untyped(tags, _context)
+                      tags.map(&:downcase)
+                    end
+                  end
+
+                  argument :tags, [String], "Tags for the comment", prepare: :prepare_tags_void
+                  argument :other_tags, [String], "Other tags for the comment", prepare: :prepare_tags_untyped
+
+                  def resolve(tags:, other_tags:)
+                    # ...
+                  end
+                end
+              RUBY
+
+              expected = <<~RBI
+                # typed: strong
+
+                class CreateComment
+                  sig { params(tags: T::Array[::String], other_tags: T::Array[::String]).returns(T.untyped) }
+                  def resolve(tags:, other_tags:); end
+                end
+              RBI
+
+              assert_equal(expected, rbi_for(:CreateComment))
+            end
+
             it "generates correct RBI arguments with a prepare method on the argument class" do
               add_ruby_file("create_comment.rb", <<~RUBY)
                 class CommentInput < GraphQL::Schema::InputObject
@@ -355,6 +426,45 @@ module Tapioca
                 class CreateComment
                   sig { params(loaded_argument: ::LoadedType, loaded_arguments: T::Array[::LoadedType], custom_name: ::LoadedType, optional_loaded_argument: T.nilable(::LoadedType), optional_loaded_arguments: T.nilable(T::Array[::LoadedType])).returns(T.untyped) }
                   def resolve(loaded_argument:, loaded_arguments:, custom_name:, optional_loaded_argument: T.unsafe(nil), optional_loaded_arguments: T.unsafe(nil)); end
+                end
+              RBI
+
+              assert_equal(expected, rbi_for(:CreateComment))
+            end
+
+            it "generates correct RBI for custom scalars whose coerce_input returns a nilable type" do
+              add_ruby_file("create_comment.rb", <<~RUBY)
+                class CustomScalar; end
+
+                class NilableScalarType < GraphQL::Schema::Scalar
+                  class << self
+                    extend T::Sig
+
+                    sig { params(value: T.untyped, context: GraphQL::Query::Context).returns(T.nilable(CustomScalar)) }
+                    def coerce_input(value, context)
+                      return nil if value.nil?
+                      CustomScalar.new
+                    end
+                  end
+                end
+
+                class CreateComment < GraphQL::Schema::Mutation
+                  argument :required_scalar, NilableScalarType, required: true
+                  argument :required_scalar_array, [NilableScalarType], required: true
+                  argument :optional_scalar, NilableScalarType, required: false
+
+                  def resolve(required_scalar:, required_scalar_array:, optional_scalar: nil)
+                    # ...
+                  end
+                end
+              RUBY
+
+              expected = <<~RBI
+                # typed: strong
+
+                class CreateComment
+                  sig { params(required_scalar: ::CustomScalar, required_scalar_array: T::Array[::CustomScalar], optional_scalar: T.nilable(::CustomScalar)).returns(T.untyped) }
+                  def resolve(required_scalar:, required_scalar_array:, optional_scalar: T.unsafe(nil)); end
                 end
               RBI
 

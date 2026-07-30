@@ -10,18 +10,20 @@ module Tapioca
       # This gem dynamically defines constants and methods at runtime. For
       # example, given a class:
       #
-      #   class MyClass
-      #     include AASM
+      # ~~~rb
+      # class MyClass
+      #   include AASM
       #
-      #     aasm do
-      #       state :sleeping, initial: true
-      #       state :running, :cleaning
+      #   aasm do
+      #     state :sleeping, initial: true
+      #     state :running, :cleaning
       #
-      #       event :run do
-      #         transitions from: :sleeping, to: :running
-      #       end
+      #     event :run do
+      #       transitions from: :sleeping, to: :running
       #     end
       #   end
+      # end
+      # ~~~
       #
       # This will result in the following constants being defined:
       #
@@ -90,7 +92,10 @@ module Tapioca
               end
 
               # Create all of the methods for each event
-              parameters = [create_rest_param("opts", type: "T.untyped")]
+              parameters = [
+                create_rest_param("opts", type: "T.untyped"),
+                create_block_param("block", type: "T.nilable(T.proc.void)"),
+              ]
               state_machine.events.each do |event|
                 model.create_method(event.name.to_s, parameters: parameters)
                 model.create_method("#{event.name}!", parameters: parameters)
@@ -199,7 +204,7 @@ module Tapioca
 
         class << self
           # @override
-          #: -> Enumerable[T::Module[top]]
+          #: -> Enumerable[Module[top]]
           def gather_constants
             T.cast(ObjectSpace.each_object(::AASM::ClassMethods), T::Enumerable[T::Module[T.anything]])
           end

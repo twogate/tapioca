@@ -25,9 +25,9 @@ module Tapioca
         #: (
         #|   RBI::Tree tree,
         #|   String module_name,
-        #|   T::Module[top] mod,
+        #|   Module[top] mod,
         #|   ?Array[Symbol] for_visibility,
-        #|   ?attached_class: T::Module[top]?
+        #|   ?attached_class: Module[top]?
         #| ) -> void
         def compile_directly_owned_methods(
           tree,
@@ -59,7 +59,7 @@ module Tapioca
         #: (
         #|   RBI::Tree tree,
         #|   String symbol_name,
-        #|   T::Module[top] constant,
+        #|   Module[top] constant,
         #|   UnboundMethod? method,
         #|   ?RBI::Visibility visibility
         #| ) -> void
@@ -69,6 +69,7 @@ module Tapioca
 
           begin
             signature = signature_of!(method)
+            signature ||= inferred_attr_writer_signature(method, constant)
             method = signature.method if signature #: UnboundMethod
 
             case @pipeline.method_definition_in_gem(method.name, constant)
@@ -169,7 +170,7 @@ module Tapioca
         # This method implements a better way of checking whether a constant defines a method.
         # It walks up the ancestor tree via the `super_method` method; if any of the super
         # methods are owned by the constant, it means that the constant declares the method.
-        #: (UnboundMethod method, T::Module[top] constant) -> bool
+        #: (UnboundMethod method, Module[top] constant) -> bool
         def method_owned_by_constant?(method, constant)
           # Widen the type of `method` to be nilable
           method = method #: UnboundMethod?
@@ -183,7 +184,7 @@ module Tapioca
           false
         end
 
-        #: (T::Module[top] mod) -> Hash[Symbol, Array[Symbol]]
+        #: (Module[top] mod) -> Hash[Symbol, Array[Symbol]]
         def method_names_by_visibility(mod)
           {
             public: public_instance_methods_of(mod),
@@ -192,7 +193,67 @@ module Tapioca
           }
         end
 
-        #: (T::Module[top] constant, String method_name) -> bool
+        #: (UnboundMethod method, Module[top] constant) -> untyped
+        def inferred_attr_writer_signature(method, constant)
+          reader_method = attr_reader_for_writer(method, constant)
+          return unless reader_method
+
+          reader_signature = signature_of(reader_method)
+          return unless reader_signature
+
+          build_attr_writer_signature(method, reader_method, reader_signature)
+        end
+
+        #: (UnboundMethod method, Module[top] constant) -> UnboundMethod?
+        def attr_reader_for_writer(method, constant)
+          method_name = method.name.to_s
+          return unless method_name.end_with?("=")
+          return unless method.parameters == [[:req]]
+
+          reader_method = T.let(constant.instance_method(method_name.delete_suffix("=").to_sym), UnboundMethod)
+          reader_method = original_method(reader_method)
+          return unless same_source_location?(method, reader_method)
+          return unless method_owned_by_constant?(reader_method, constant)
+
+          reader_method
+        rescue NameError
+          nil
+        end
+
+        #: (UnboundMethod writer_method, UnboundMethod reader_method, untyped reader_signature) -> untyped
+        def build_attr_writer_signature(writer_method, reader_method, reader_signature)
+          return unless reader_signature.arg_types.empty?
+          return unless reader_signature.kwarg_types.empty?
+          return if reader_signature.rest_type
+          return if reader_signature.keyrest_type
+          return if reader_signature.block_type
+
+          T::Private::Methods::Signature.new(
+            method: writer_method,
+            method_name: writer_method.name,
+            raw_arg_types: { reader_method.name => reader_signature.return_type },
+            raw_return_type: reader_signature.return_type,
+            bind: nil,
+            mode: reader_signature.mode,
+            check_level: reader_signature.check_level,
+            on_failure: reader_signature.on_failure,
+            override_allow_incompatible: reader_signature.override_allow_incompatible,
+            defined_raw: reader_signature.defined_raw,
+          )
+        end
+
+        #: (UnboundMethod method) -> UnboundMethod
+        def original_method(method)
+          T.let(signature_of(method)&.method || method, UnboundMethod)
+        end
+
+        #: (UnboundMethod method, UnboundMethod other_method) -> bool
+        def same_source_location?(method, other_method)
+          source_location = method.source_location
+          !!source_location && source_location == other_method.source_location
+        end
+
+        #: (Module[top] constant, String method_name) -> bool
         def struct_method?(constant, method_name)
           return false unless T::Props::ClassMethods === constant
 
@@ -202,7 +263,7 @@ module Tapioca
             .include?(method_name.gsub(/=$/, "").to_sym)
         end
 
-        #: (T::Module[top]? attached_class, Symbol method_name) -> bool?
+        #: (Module[top]? attached_class, Symbol method_name) -> bool?
         def method_new_in_abstract_class?(attached_class, method_name)
           attached_class &&
             method_name == :new &&
@@ -210,7 +271,7 @@ module Tapioca
             Class === attached_class.singleton_class
         end
 
-        #: (T::Module[top] constant) -> UnboundMethod?
+        #: (Module[top] constant) -> UnboundMethod?
         def initialize_method_for(constant)
           constant.instance_method(:initialize)
         rescue

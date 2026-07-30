@@ -80,7 +80,9 @@ module Tapioca
             signature = Runtime::Reflection.signature_of(method)
             return_type = signature&.return_type
 
-            valid_return_type?(return_type) ? return_type.to_s : "T.untyped"
+            # Wrap as non-nilable for required arguments. `coerce_input` supports both
+            # required and optional; optional arguments are re-wrapped below based on `type.non_null?`
+            valid_return_type?(return_type) ? (T::Utils.unwrap_nilable(return_type) || return_type).to_s : "T.untyped"
           when GraphQL::Schema::InputObject.singleton_class
             type_for_constant(unwrapped_type)
           when Module
@@ -89,15 +91,20 @@ module Tapioca
             "T.untyped"
           end
 
+          prepared = false
           if prepare_method
             prepare_signature = Runtime::Reflection.signature_of(prepare_method)
             prepare_return_type = prepare_signature&.return_type
             if valid_return_type?(prepare_return_type)
               parsed_type = prepare_return_type&.to_s
+              prepared = true
             end
           end
 
-          if type.list?
+          # A `prepare` method receives (and returns) the argument's fully coerced value, list
+          # wrapper included, so its return type already accounts for `type.list?` and must not be
+          # wrapped again.
+          if type.list? && !prepared
             parsed_type = "T::Array[#{parsed_type}]"
           end
 
@@ -110,7 +117,7 @@ module Tapioca
 
         private
 
-        #: (T::Module[top] constant) -> String
+        #: (Module[top] constant) -> String
         def type_for_constant(constant)
           if constant.instance_methods.include?(:prepare)
             prepare_method = constant.instance_method(:prepare)

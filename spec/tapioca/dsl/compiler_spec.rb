@@ -92,6 +92,15 @@ module Tapioca
               def baz(d:, e: 42, **f, &blk)
               end
 
+              sig do
+                type_parameters(:U, :V)
+                  .params(a: T.type_parameter(:U), blk: T.proc.params(arg: T.type_parameter(:U)).returns(T.type_parameter(:V)))
+                  .returns(T.type_parameter(:V))
+              end
+              def complex_type_params(a, &blk)
+                blk.call(a)
+              end
+
               sig { type_parameters(:U).params(a: T.type_parameter(:U)).returns(T.type_parameter(:U)) }
               def foo(a)
                 a
@@ -120,7 +129,10 @@ module Tapioca
               sig { params(d: ::String, e: ::Integer, f: ::Integer, blk: T.proc.params(a: ::String).returns(::String)).returns(::Integer) }
               def baz(d:, e: T.unsafe(nil), **f, &blk); end
 
-              sig { params(a: T.type_parameter(:U)).returns(T.type_parameter(:U)) }
+              sig { type_parameters(:U, :V).params(a: T.type_parameter(:U), blk: T.proc.params(arg: T.type_parameter(:U)).returns(T.type_parameter(:V))).returns(T.type_parameter(:V)) }
+              def complex_type_params(a, &blk); end
+
+              sig { type_parameters(:U).params(a: T.type_parameter(:U)).returns(T.type_parameter(:U)) }
               def foo(a); end
 
               sig { params(a: ::Integer, b: ::Integer, c: ::Integer, d: ::Integer, e: ::Integer, f: ::Integer, blk: T.proc.void).void }
@@ -179,7 +191,7 @@ module Tapioca
                     klass.create_method(
                       method.name.to_s,
                       parameters: [],
-                      return_type: "void)",
+                      return_type: "void)", # intentional mistake, leading to `sig { returns(void)) }`
                       class_method: false,
                     )
                   end
@@ -208,9 +220,10 @@ module Tapioca
             end
           RUBY
 
-          assert_raises(SyntaxError, /void\)/) do
-            rbi_for(:Post)
-          end
+          e = assert_raises(SyntaxError) { rbi_for(:Post) }
+
+          assert_match('unexpected token ")"', e.message)
+          assert_match("sig { returns(void)) }", e.message)
         end
       end
     end

@@ -8,8 +8,6 @@ module Tapioca
         include Runtime::Reflection
         include RBIHelper
 
-        TYPE_PARAMETER_MATCHER = /T\.type_parameter\(:?([[:word:]]+)\)/
-
         private
 
         # @override
@@ -25,8 +23,10 @@ module Tapioca
         def compile_signature(signature, parameters)
           parameter_types = signature.arg_types.to_h #: Hash[Symbol, T::Types::Base]
           parameter_types.merge!(signature.kwarg_types)
-          parameter_types[signature.rest_name] = signature.rest_type if signature.has_rest
-          parameter_types[signature.keyrest_name] = signature.keyrest_type if signature.has_keyrest
+          rest_type = signature.rest_type
+          parameter_types[signature.rest_name] = rest_type if rest_type
+          keyrest_type = signature.keyrest_type
+          parameter_types[signature.keyrest_name] = keyrest_type if keyrest_type
           parameter_types[signature.block_name] = signature.block_type if signature.block_name
 
           sig = RBI::Sig.new
@@ -42,9 +42,7 @@ module Tapioca
           sig.return_type = return_type
           @pipeline.push_symbol(return_type)
 
-          parameter_types.values.join(", ").scan(TYPE_PARAMETER_MATCHER).flatten.uniq.each do |k, _|
-            sig.type_params << k
-          end
+          sig.type_params.concat(extract_type_parameters(parameter_types.values.map(&:to_s).append(return_type)))
 
           case signature.mode
           when "abstract"

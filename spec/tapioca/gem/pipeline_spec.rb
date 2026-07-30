@@ -1933,6 +1933,83 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       assert_equal(output, compile)
     end
 
+    it "compiles attr_reader/attr_writer/attr_accessor with signatures" do
+      add_ruby_file("bar.rb", <<~RUBY)
+        class Bar
+          sig { returns(String) }
+          attr_reader(:a)
+
+          sig { returns(Integer) }
+          attr_accessor(:b)
+
+          sig { params(c: Symbol).void }
+          attr_writer(:c)
+        end
+      RUBY
+
+      output = template(<<~RBI)
+        class Bar
+          sig { returns(::String) }
+          def a; end
+
+          sig { returns(::Integer) }
+          def b; end
+
+          sig { params(b: ::Integer).returns(::Integer) }
+          def b=(b); end
+
+          sig { params(c: ::Symbol).void }
+          def c=(c); end
+        end
+      RBI
+
+      assert_equal(output, compile)
+    end
+
+    it "does not infer attr_accessor writer signatures for separate attr_readers and attr_writers" do
+      add_ruby_file("bar.rb", <<~RUBY)
+        class Bar
+          sig { returns(Integer) }
+          attr_reader(:foo)
+
+          attr_writer(:foo)
+        end
+      RUBY
+
+      output = template(<<~RBI)
+        class Bar
+          sig { returns(::Integer) }
+          def foo; end
+
+          def foo=(_arg0); end
+        end
+      RBI
+
+      assert_equal(output, compile)
+    end
+
+    it "does not infer attr_accessor writer signatures for manually defined writers" do
+      add_ruby_file("bar.rb", <<~RUBY)
+        class Bar
+          sig { returns(Integer) }
+          def foo; end
+
+          def foo=(foo); end
+        end
+      RUBY
+
+      output = template(<<~RBI)
+        class Bar
+          sig { returns(::Integer) }
+          def foo; end
+
+          def foo=(foo); end
+        end
+      RBI
+
+      assert_equal(output, compile)
+    end
+
     it "ignores methods with invalid names" do
       add_ruby_file("bar.rb", <<~RUBY)
         class Bar
@@ -3407,7 +3484,8 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           sig { returns(T::Array[::Integer]) }
           def foo; end
 
-          def foo=(_arg0); end
+          sig { params(foo: T::Array[::Integer]).returns(T::Array[::Integer]) }
+          def foo=(foo); end
 
           sig { override.returns(::Integer) }
           def something; end
@@ -4240,6 +4318,9 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           # Method bar
           #
           # This method does something really important
+          #
+          # @param a [String]
+          # @return [void]
           sig { params(a: ::String).void }
           def bar(a); end
 
@@ -4256,11 +4337,10 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
 
           def no_yard_docs_nor_sig; end
 
+          # @deprecated Do not use me!
           # Method only_docs
           #
           # This method only has documentation
-          #
-          # @deprecated Do not use me!
           def only_docs(a); end
 
           class << self
@@ -4268,18 +4348,22 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
             #
             # This is a singleton method
             #
-            # @deprecated Use something else instead of this method because
-            #   it uses a library that is no longer supported in Ruby 1.9.
-            #   The new method accepts the same parameters.
+            # @param t [Integer, String]
+            # @return [void]
             # @example My example
             #   a = "hello world"
             #   a.reverse
+            # @deprecated Use something else instead of this method because
+            #   it uses a library that is no longer supported in Ruby 1.9.
+            #   The new method accepts the same parameters.
             sig { params(t: ::Integer).void }
             def baz(t); end
 
             # Method something
             #
             # This is another singleton method
+            #
+            # @return [void]
             sig { void }
             def something; end
           end
@@ -4578,8 +4662,6 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           def foo; end
         end
 
-        # @abstract It cannot be directly instantiated. Subclasses must implement the `abstract` methods below.
-        #
         # pkg:gem/#{DEFAULT_GEM_NAME}#lib/foo.rb:11
         class Baz
           abstract!
@@ -4621,6 +4703,32 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       compiled = compile(include_doc: true, include_loc: true)
 
       assert_equal(output, compiled)
+    end
+
+    it "compiles methods with .void.checked(:tests) properly" do
+      add_ruby_file("bar.rb", <<~RUBY)
+        class Bar
+          extend T::Sig
+
+          sig { params(x: Integer).void.checked(:tests) }
+          def initialize(x); end
+
+          sig { void.checked(:tests) }
+          def foo; end
+        end
+      RUBY
+
+      output = template(<<~RBI)
+        class Bar
+          sig { params(x: ::Integer).void }
+          def initialize(x); end
+
+          sig { void }
+          def foo; end
+        end
+      RBI
+
+      assert_equal(output, compile)
     end
 
     it "compiles constants with nil values" do
@@ -4673,7 +4781,9 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
           sig { returns(::String) }
           def foo; end
 
-          def foo=(_arg0); end
+          sig { params(foo: ::String).returns(::String) }
+          def foo=(foo); end
+
           def qux; end
 
           class << self
@@ -4803,7 +4913,7 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       assert_equal(output, compile)
     end
 
-    it "sorts YARD tags stably by tag_name and name" do
+    it "keeps YARD tags in the original order" do
       add_ruby_file("foo.rb", <<~RUBY)
         class Foo
           # Method with multiple parameters
@@ -4819,12 +4929,11 @@ class Tapioca::Gem::PipelineSpec < Minitest::HooksSpec
       output = template(<<~RBI)
         class Foo
           # Method with multiple parameters
-          #
-          # @param alpha [Integer] first parameter alphabetically
-          # @param beta [Boolean] middle parameter alphabetically
+          # @return [String] the result
           # @param zebra [String] last parameter alphabetically
           # @raise [ArgumentError] when params are invalid
-          # @return [String] the result
+          # @param alpha [Integer] first parameter alphabetically
+          # @param beta [Boolean] middle parameter alphabetically
           def multi_param_method(zebra, alpha, beta); end
         end
       RBI

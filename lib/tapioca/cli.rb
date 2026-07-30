@@ -103,6 +103,10 @@ module Tapioca
       type: :boolean,
       default: false,
       desc: "Verifies RBIs are up-to-date"
+    option :only_bootsnap_rbs_cache,
+      type: :boolean,
+      default: false,
+      desc: "Only boot the application and load DSL extensions/compilers to populate the bootsnap iseq cache, then exit. Skips compiler execution and RBI generation. Mutually exclusive with --verify and --list-compilers."
     option :quiet,
       aliases: ["-q"],
       type: :boolean,
@@ -116,6 +120,10 @@ module Tapioca
       type: :numeric,
       desc: "Set the max line length of generated RBIs. Signatures longer than the max line length will be wrapped",
       default: DEFAULT_RBI_MAX_LINE_LENGTH
+    option :max_diff_lines,
+      type: :numeric,
+      desc: "Max number of diff lines to include in the `dsl --verify` output",
+      default: DEFAULT_MAX_DIFF_LINES
     option :environment,
       aliases: ["-e"],
       type: :string,
@@ -146,8 +154,18 @@ module Tapioca
     def dsl(*constant_or_paths)
       set_environment(options)
 
+      if options[:only_bootsnap_rbs_cache] && (options[:verify] || options[:list_compilers])
+        conflicting = options[:verify] ? "--verify" : "--list-compilers"
+        raise MalformattedArgumentError,
+          "Options '--only-bootsnap-rbs-cache' and '#{conflicting}' are mutually exclusive"
+      end
+
       # Assume anything starting with a capital letter or colon is a class, otherwise a path
       constants, paths = constant_or_paths.partition { |c| c =~ /\A[A-Z:]/ }
+
+      unless options[:max_diff_lines].positive?
+        raise MalformattedArgumentError, "Option '--max-diff-lines' must be a positive number"
+      end
 
       command_args = {
         requested_constants: constants,
@@ -166,6 +184,7 @@ module Tapioca
         halt_upon_load_error: options[:halt_upon_load_error],
         compiler_options: options[:compiler_options],
         lsp_addon: self.class.addon_mode,
+        max_diff_lines: options[:max_diff_lines],
       }
 
       command = if options[:verify]
@@ -173,7 +192,7 @@ module Tapioca
       elsif options[:list_compilers]
         Commands::DslCompilerList.new(**command_args)
       else
-        Commands::DslGenerate.new(**command_args)
+        Commands::DslGenerate.new(**command_args, only_bootsnap_rbs_cache: options[:only_bootsnap_rbs_cache])
       end
 
       command.run
@@ -225,7 +244,7 @@ module Tapioca
       default: false
     option :doc,
       type: :boolean,
-      desc: "Include YARD documentation from sources when generating RBIs. Warning: this might be slow",
+      desc: "Include documentation from sources when generating RBIs",
       default: true
     option :loc,
       type: :boolean,

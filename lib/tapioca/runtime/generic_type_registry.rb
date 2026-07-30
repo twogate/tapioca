@@ -6,7 +6,7 @@ module Tapioca
     # This class is responsible for storing and looking up information related to generic types.
     #
     # The class stores 2 different kinds of data, in two separate lookup tables:
-    #   1. a lookup of generic type instances by name: `@generic_instances`
+    #   1. a lookup of generic type instances by constant and name: `@generic_instances`
     #   2. a lookup of type variable serializer by constant and type variable
     #      instance: `@type_variables`
     #
@@ -21,22 +21,47 @@ module Tapioca
     # variable to type variable serializers. This allows us to associate type variables
     # to the constant names that represent them, easily.
     module GenericTypeRegistry
-      @generic_instances = {} #: Hash[String, T::Module[top]]
+      @generic_instances = {}.compare_by_identity #: Hash[Module[top], Hash[String, Module[top]]]
 
-      @type_variables = {}.compare_by_identity #: Hash[T::Module[top], Array[TypeVariableModule]]
+      @type_variables = {}.compare_by_identity #: Hash[Module[top], Array[TypeVariableModule]]
 
-      class GenericType < T::Types::Simple
-        #: (T::Module[top] raw_type, T::Module[top] underlying_type) -> void
+      # Subclasses `T::Types::Base` rather than `T::Types::Simple` so that all
+      # validation goes through the `valid?` override below. `Simple` fast paths
+      # check `raw_type` directly, which for us is the clone, not the underlying type.
+      class GenericType < T::Types::Base
+        #: Module[top]
+        attr_reader :raw_type
+
+        #: (Module[top] raw_type, Module[top] underlying_type) -> void
         def initialize(raw_type, underlying_type)
-          super(raw_type)
+          super()
 
-          @underlying_type = underlying_type #: T::Module[top]
+          @raw_type = raw_type
+          @underlying_type = underlying_type #: Module[top]
         end
 
         # @override
         #: (untyped obj) -> bool
         def valid?(obj)
           obj.is_a?(@underlying_type)
+        end
+
+        # @override
+        #: -> String
+        def name
+          T.must(@raw_type.name)
+        end
+
+        # @override
+        #: -> nil
+        def build_type
+          nil
+        end
+
+        # Matches the always-true `<=` we define on the clone in `create_generic_type`.
+        #: (T::Types::Base type) -> bool
+        private def subtype_of_single?(type)
+          true
         end
       end
 
@@ -45,14 +70,15 @@ module Tapioca
         # and cloning the given constant so that we can return a type that is the same
         # as the current type but is a different instance and has a different name method.
         #
-        # We cache those cloned instances by their name in `@generic_instances`, so that
-        # we don't keep instantiating a new type every single time it is referenced.
+        # We cache those cloned instances by their original constant and their name in
+        # `@generic_instances`, so that we don't keep instantiating a new type every single
+        # time it is referenced.
         # For example, `[Foo[Integer], Foo[Integer], Foo[Integer], Foo[String]]` will only
         # result in 2 clones (1 for `Foo[Integer]` and another for `Foo[String]`) and
         # 2 hash lookups (for the other two `Foo[Integer]`s).
         #
         # This method returns the created or cached clone of the constant.
-        #: (untyped constant, untyped types) -> T::Module[top]
+        #: (untyped constant, untyped types) -> Module[top]
         def register_type(constant, types)
           # Build the name of the instantiated generic type,
           # something like `"Foo[X, Y, Z]"`
@@ -64,15 +90,18 @@ module Tapioca
           #
           # Also, we try to memoize the generic type based on the name, so that
           # we don't have to keep recreating them all the time.
-          @generic_instances[name] ||= create_generic_type(constant, name)
+          generic_instances = @generic_instances[constant] ||= {}
+          generic_instances[name] ||= create_generic_type(constant, name)
         end
 
         #: (Object instance) -> bool
         def generic_type_instance?(instance)
-          @generic_instances.values.any? { |generic_type| generic_type === instance }
+          @generic_instances.values.any? do |generic_instances|
+            generic_instances.values.any? { |generic_type| generic_type === instance }
+          end
         end
 
-        #: (T::Module[top] constant) -> Array[TypeVariableModule]?
+        #: (Module[top] constant) -> Array[TypeVariableModule]?
         def lookup_type_variables(constant)
           @type_variables[constant]
         end
@@ -88,14 +117,14 @@ module Tapioca
         # can return it from the original methods as well.
         #: (untyped constant, TypeVariableModule type_variable) -> void
         def register_type_variable(constant, type_variable)
-          type_variables = lookup_or_initialize_type_variables(constant)
+          type_variables = @type_variables[constant] ||= []
 
           type_variables << type_variable
         end
 
         private
 
-        #: (T::Module[top] constant, String name) -> T::Module[top]
+        #: (Module[top] constant, String name) -> Module[top]
         def create_generic_type(constant, name)
           generic_type = case constant
           when Class
@@ -162,11 +191,6 @@ module Tapioca
             # Reinstate the original inherited method back.
             owner.send(:define_method, :inherited, inherited_method)
           end
-        end
-
-        #: (T::Module[top] constant) -> Array[TypeVariableModule]
-        def lookup_or_initialize_type_variables(constant)
-          @type_variables[constant] ||= []
         end
       end
     end

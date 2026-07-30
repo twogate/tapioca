@@ -48,8 +48,6 @@ class Racc::Parser
   #
   # The final symbol (End of file) must be false.
   #
-  # @raise [NotImplementedError]
-  #
   # pkg:gem/racc#lib/racc/parser.rb:275
   def next_token; end
 
@@ -67,8 +65,6 @@ class Racc::Parser
   # This method raises ParseError by default.
   #
   # If this method returns, parsers enter "error recovering mode".
-  #
-  # @raise [ParseError]
   #
   # pkg:gem/racc#lib/racc/parser.rb:535
   def on_error(t, val, vstack); end
@@ -144,12 +140,8 @@ end
 # pkg:gem/racc#lib/racc/parser.rb:205
 Racc::Parser::Racc_Main_Parsing_Routine = T.let(T.unsafe(nil), Symbol)
 
-Racc::Parser::Racc_Runtime_Core_Id_C = T.let(T.unsafe(nil), String)
-
 # pkg:gem/racc#lib/racc/parser.rb:207
 Racc::Parser::Racc_Runtime_Core_Version = T.let(T.unsafe(nil), String)
-
-Racc::Parser::Racc_Runtime_Core_Version_C = T.let(T.unsafe(nil), String)
 
 # pkg:gem/racc#lib/racc/parser.rb:187
 Racc::Parser::Racc_Runtime_Core_Version_R = T.let(T.unsafe(nil), String)
