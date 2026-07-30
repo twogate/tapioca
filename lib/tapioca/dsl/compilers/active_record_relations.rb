@@ -1005,7 +1005,7 @@ module Tapioca
         #: -> void
         def create_where_relation_method
           parameters = constant.column_names.map do |column_name|
-            create_kw_opt_param(column_name, type: 'T.any(String, Integer, Symbol, T::Boolean, NilClass, T::Array[T.any(String, Integer, Symbol)], ActiveRecord::AssociationRelation, ActiveRecord::Relation, T::Range[T.untyped])', default: 'nil')
+            create_kw_opt_param(column_name, type: 'T.any(String, Integer, Symbol, T::Boolean, NilClass, T::Array[T.any(String, Integer, Symbol)], ActiveRecord::AssociationRelation, ActiveRecord::Relation, T::Range[T.untyped]), ActiveSupport::TimeWithZone', default: 'nil')
           end + constant.reflect_on_all_associations(:belongs_to).map(&:name).map do |association_name|
             create_kw_opt_param(association_name, type: 'T.any(NilClass, ActiveRecord::Base, ActiveRecord::AssociationRelation, ActiveRecord::Relation, T::Array[ActiveRecord::Base], T::Hash[T.any(String, Symbol), T.untyped])', default: 'nil')
           end + [
