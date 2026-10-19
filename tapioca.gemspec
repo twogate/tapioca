@@ -23,7 +23,6 @@ Gem::Specification.new do |spec|
 
   spec.metadata["allowed_push_host"] = "https://rubygems.org"
 
-  spec.add_dependency("benchmark")
   spec.add_dependency("bundler", ">= 2.2.25")
   spec.add_dependency("netrc", ">= 0.11.0")
   spec.add_dependency("parallel", ">= 1.21.0")
@@ -34,7 +33,7 @@ Gem::Specification.new do |spec|
 
   # Tapioca requires a specific minimum versions of RBI and Spoom
   # to ensure that the RBS comments are translated correctly.
-  spec.add_dependency("rbi", ">= 0.3.7")
+  spec.add_dependency("rbi", ">= 0.4.1")
   spec.add_dependency("spoom", ">= 1.7.16")
   # We need this to be ported to the RBS 4.0 branch before we can remove this dependency:
   # https://github.com/ruby/rbs/pull/2601

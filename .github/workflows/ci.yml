@@ -19,10 +19,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Ruby
-        uses: ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0
+        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
-          bundler-cache: true
-          rubygems: 4.0.10
+          rubygems: latest
+      - name: Install dependencies
+        run: |
+          bundle config set --local path.system true
+          bundle config set --local frozen true
+          bundle install --jobs 4
       - name: Run type check
         run: bin/typecheck
       - name: Lint Ruby files
@@ -43,13 +47,12 @@ jobs:
       matrix:
         ruby: ["3.3", "3.4", "4.0","head"]
         rails: ["8.0", "current", "main"]
-        rubygems: ["4.0.10"]
         include:
           - rails: "main"
             experimental: true
           - ruby: "head"
             experimental: true
-    name: Ruby ${{ matrix.ruby }} - Rails ${{ matrix.rails }} - RubyGems ${{ matrix.rubygems }}
+    name: Ruby ${{ matrix.ruby }} - Rails ${{ matrix.rails }}
     env:
       RAILS_VERSION: ${{ matrix.rails }}
     steps:
@@ -64,11 +67,17 @@ jobs:
         if: ${{ matrix.ruby == 'head' || matrix.rails != 'current' }}
         run: "rm -f Gemfile.lock"
       - name: Set up Ruby
-        uses: ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0
+        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: ${{ matrix.ruby }}
-          bundler-cache: true
-          rubygems: ${{ matrix.rubygems }}
+          rubygems: latest
+      - name: Install dependencies
+        run: |
+          bundle config set --local path.system true
+          if [ -f Gemfile.lock ]; then
+            bundle config set --local frozen true
+          fi
+          bundle install --jobs 4
       - name: Run tests
         run: bin/test
         continue-on-error: ${{ !!matrix.experimental }}

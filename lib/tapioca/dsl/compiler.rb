@@ -74,8 +74,20 @@ module Tapioca
           @all_modules ||= if @@requested_constants.any?
             @@requested_constants.grep(Module)
           else
-            ObjectSpace.each_object(Module).to_a
+            ObjectSpace.each_object(Module).reject { |mod| deprecated_constant_proxy?(mod) }.to_a
           end.freeze #: Enumerable[Module[top]]?
+        end
+
+        # Rails 8.1+ wraps deprecated constants in DeprecatedConstantProxy, which
+        # undefines most instance methods and warns from method_missing. Inspecting
+        # those modules during DSL discovery (is_a?, singleton_class, etc.) emits
+        # deprecation warnings even though Tapioca is only enumerating ObjectSpace.
+        # class_of uses Kernel#class so we can recognize the proxy without warning.
+        #: (Module[top] mod) -> bool
+        def deprecated_constant_proxy?(mod)
+          proxy_class_name = name_of(class_of(mod))
+          proxy_class_name == "ActiveSupport::Deprecation::DeprecatedConstantProxy" ||
+            proxy_class_name == "ActiveSupport::DeprecatedConstantProxy"
         end
       end
 
@@ -163,25 +175,27 @@ module Tapioca
         parameters.each_with_index.map do |(type, name), index|
           fallback_arg_name = "_arg#{index}"
 
-          name = name ? name.to_s : fallback_arg_name
-          name = fallback_arg_name unless valid_parameter_name?(name)
+          sig_name = name ? name.to_s : fallback_arg_name
+          is_anonymous_parameter = anonymous_parameter_name?(type, sig_name)
+          sig_name = fallback_arg_name unless is_anonymous_parameter || valid_parameter_name?(sig_name)
+          param_name = is_anonymous_parameter ? nil : sig_name
           method_type = T.must(method_types[index])
 
           case type
           when :req
-            create_param(name, type: method_type)
+            create_param(sig_name, type: method_type)
           when :opt
-            create_opt_param(name, type: method_type, default: "T.unsafe(nil)")
+            create_opt_param(sig_name, type: method_type, default: "T.unsafe(nil)")
           when :rest
-            create_rest_param(name, type: method_type)
+            create_rest_param(param_name, type: method_type)
           when :keyreq
-            create_kw_param(name, type: method_type)
+            create_kw_param(sig_name, type: method_type)
           when :key
-            create_kw_opt_param(name, type: method_type, default: "T.unsafe(nil)")
+            create_kw_opt_param(sig_name, type: method_type, default: "T.unsafe(nil)")
           when :keyrest
-            create_kw_rest_param(name, type: method_type)
+            create_kw_rest_param(param_name, type: method_type)
           when :block
-            create_block_param(name, type: method_type)
+            create_block_param(param_name, type: method_type)
           else
             raise "Unknown type `#{type}`."
           end

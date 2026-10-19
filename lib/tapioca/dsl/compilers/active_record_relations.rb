@@ -183,7 +183,7 @@ module Tapioca
           # @override
           #: -> Enumerable[Module[top]]
           def gather_constants
-            ActiveRecord::Base.descendants.reject(&:abstract_class?)
+            descendants_of(::ActiveRecord::Base).reject(&:abstract_class?)
           end
         end
 
@@ -224,10 +224,10 @@ module Tapioca
           order: ["T.any(Symbol, T::Array[Symbol])", ":asc"],
           cursor: ["T.untyped", "primary_key"],
           use_ranges: ["T.untyped", "nil"],
-        } #: Hash[Symbol, [String, String]]
+        }.freeze #: Hash[Symbol, [String, String]]
         CALCULATION_METHODS = ActiveRecord::Calculations.instance_methods(false) #: Array[Symbol]
         RELATION_METHODS = ActiveRecord::Relation.instance_methods(false) #: Array[Symbol]
-        TO_ARRAY_METHODS = [:to_ary, :to_a] #: Array[Symbol]
+        TO_ARRAY_METHODS = [:to_ary, :to_a].freeze #: Array[Symbol]
 
         private
 
@@ -794,8 +794,7 @@ module Tapioca
                   constant,
                   column_type_option: Tapioca::Dsl::Helpers::ActiveRecordColumnTypeHelper::ColumnTypeOption::Persisted,
                 )
-                primary_key = constant.primary_key
-                getter_type, _setter_type = column_type_helper.type_for(primary_key)
+                getter_type, _setter_type = column_type_helper.type_for("id")
                 type = getter_type
                 create_common_method("ids", return_type: "T::Array[#{type}]")
               else

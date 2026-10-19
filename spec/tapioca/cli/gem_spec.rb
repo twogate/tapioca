@@ -687,7 +687,7 @@ module Tapioca
         end
 
         it "must not include code from an ActiveSupport.on_load hook in ActiveRecord RBIs" do
-          @project.require_real_gem("rails", "7.1.0")
+          @project.require_real_gem("rails", "7.1.6")
           # Flipper adds functionality to ActiveRecord via an ActiveSupport.on_load hook
           @project.require_real_gem("flipper-active_record", "1.3.1")
 
@@ -698,7 +698,7 @@ module Tapioca
           assert_success_status(result)
 
           activerecord_rbi_file = T.must(
-            Dir.glob("#{@project.absolute_path}/sorbet/rbi/gems/activerecord@7.1.0.rbi").first,
+            Dir.glob("#{@project.absolute_path}/sorbet/rbi/gems/activerecord@7.1.6.rbi").first,
           )
           refute_includes(File.read(activerecord_rbi_file), "class Flipper")
         end
@@ -872,6 +872,87 @@ module Tapioca
 
         it "skips missing gems and continues with warning when --lsp_addon is used" do
           result = @project.tapioca("gem non_existent_gem --lsp_addon")
+
+          assert_empty_stderr(result)
+          assert_success_status(result)
+        end
+
+        it "reports explicitly requested ignored gems" do
+          result = @project.tapioca("gem sorbet", exclude: [])
+
+          assert_stdout_includes(result, <<~OUT)
+            Note: Tapioca skipped RBI generation for the following gems because they are ignored by default:
+            sorbet
+          OUT
+          refute_includes(result.out, "Compiled sorbet")
+
+          assert_empty_stderr(result)
+          assert_success_status(result)
+        end
+
+        it "reports gems excluded by built-in and user configuration" do
+          result = @project.tapioca("gem sorbet rbi --exclude rbi")
+
+          assert_stdout_includes(result, <<~OUT)
+            Note: Tapioca skipped RBI generation for the following gems because they are ignored by default:
+            sorbet
+          OUT
+          assert_stdout_includes(result, <<~OUT)
+            Note: Tapioca skipped RBI generation for the following gems because they were excluded:
+            rbi
+          OUT
+          refute_includes(result.out, "Compiled rbi")
+
+          assert_empty_stderr(result)
+          assert_success_status(result)
+        end
+
+        it "reports gems excluded by user configuration" do
+          result = @project.tapioca("gem rbi --exclude rbi")
+
+          assert_stdout_includes(result, <<~OUT)
+            Note: Tapioca skipped RBI generation for the following gems because they were excluded:
+            rbi
+          OUT
+          refute_includes(result.out, "Compiled rbi")
+
+          assert_empty_stderr(result)
+          assert_success_status(result)
+        end
+
+        it "does not generate dependencies of explicitly excluded gems" do
+          @project.require_mock_gem(mock_gem("foo", "0.0.1", dependencies: ["bar"]))
+          @project.require_mock_gem(mock_gem("bar", "0.0.1"))
+          # Keep foo materialized after Bundler excludes it as a direct dependency.
+          @project.require_mock_gem(mock_gem("baz", "0.0.1", dependencies: ["foo"]))
+          @project.bundle_install!
+
+          result = @project.tapioca("gem foo --include-dependencies --exclude foo")
+
+          assert_stdout_includes(result, <<~OUT)
+            Note: Tapioca skipped RBI generation for the following gems because they were excluded:
+            foo
+          OUT
+          refute_includes(result.out, "Compiled foo")
+          refute_includes(result.out, "Compiled bar")
+
+          assert_empty_stderr(result)
+          assert_success_status(result)
+        end
+
+        it "does not report exclusions when no gems are explicitly requested" do
+          result = @project.tapioca("gem --exclude rbi")
+
+          refute_includes(result.out, "because they were excluded")
+
+          assert_empty_stderr(result)
+          assert_success_status(result)
+        end
+
+        it "does not report exclusions when all gems are requested" do
+          result = @project.tapioca("gem --all --exclude rbi")
+
+          refute_includes(result.out, "because they were excluded")
 
           assert_empty_stderr(result)
           assert_success_status(result)
@@ -2214,6 +2295,142 @@ module Tapioca
             Continuing RBI generation without loading the Rails application.
              Done
           OUT
+          assert_success_status(result)
+        end
+      end
+
+      describe "custom extensions" do
+        after do
+          project.write_gemfile!(project.tapioca_gemfile)
+          @project.require_default_gems
+          @project.remove!("sorbet/rbi")
+          @project.remove!("sorbet/tapioca/gem")
+          @project.remove!("../gems")
+        end
+
+        it "loads extensions" do
+          foo = mock_gem("foo", "0.0.1") do
+            write!("lib/foo.rb", <<~RUBY)
+              module Patch
+                def [](*types)
+                  self
+                end
+              end
+
+              class Foo
+                extend T::Generic
+                Value = type_member
+                extend Patch
+
+                sig do
+                  type_parameters(:Value).
+                    params(
+                      block: T.proc.returns(T.type_parameter(:Value))
+                    ).returns(Foo[T.type_parameter(:Value)])
+                end
+                def something(&block); end
+              end
+            RUBY
+
+            write!("lib/tapioca/gem/extensions/foo.rb", <<~RUBY)
+              require "foo"
+
+              module Patch
+                def [](*types)
+                  super
+                end
+              end
+            RUBY
+          end
+
+          @project.require_mock_gem(foo)
+          @project.bundle_install!
+
+          result = @project.tapioca("gem foo")
+
+          assert_stdout_includes(result, "Loading gem extension classes... Done")
+
+          assert_project_file_includes("sorbet/rbi/gems/foo@0.0.1.rbi", <<~RBI)
+            class Foo
+              extend T::Generic
+              extend ::Patch
+
+              Value = type_member
+
+              sig do
+                type_parameters(:Value)
+                  .params(
+                    block: T.proc.returns(T.type_parameter(:Value))
+                  ).returns(Foo[T.type_parameter(:Value)])
+              end
+              def something(&block); end
+            end
+
+            module Patch
+              def [](*types); end
+            end
+          RBI
+
+          assert_empty_stderr(result)
+          assert_success_status(result)
+        end
+
+        it "loads extensions defined by the project" do
+          foo = mock_gem("foo", "0.0.1") do
+            write!("lib/foo.rb", <<~RUBY)
+              class Foo
+                SETTINGS.each { |setting| define_method(setting) { nil } } if defined?(SETTINGS)
+              end
+            RUBY
+          end
+
+          @project.require_mock_gem(foo)
+          @project.bundle_install!
+
+          @project.write!("sorbet/tapioca/gem/extensions/foo.rb", <<~RUBY)
+            SETTINGS = [:host, :port]
+          RUBY
+
+          result = @project.tapioca("gem foo")
+
+          assert_project_file_includes("sorbet/rbi/gems/foo@0.0.1.rbi", <<~RBI)
+            class Foo
+              def host; end
+              def port; end
+            end
+          RBI
+
+          assert_empty_stderr(result)
+          assert_success_status(result)
+        end
+
+        it "does not load extensions from excluded gems" do
+          foo = mock_gem("foo", "0.0.1") do
+            write!("lib/foo.rb", "module Foo; end")
+
+            write!("lib/tapioca/gem/extensions/foo.rb", <<~RUBY)
+              puts "FOO EXTENSION LOADED"
+            RUBY
+          end
+
+          bar = mock_gem("bar", "0.0.1") do
+            write!("lib/bar.rb", "module Bar; end")
+
+            write!("lib/tapioca/gem/extensions/bar.rb", <<~RUBY)
+              puts "BAR EXTENSION LOADED"
+            RUBY
+          end
+
+          @project.require_mock_gem(foo)
+          @project.require_mock_gem(bar)
+          @project.bundle_install!
+
+          result = @project.tapioca("gem bar --exclude foo")
+
+          assert_stdout_includes(result, "BAR EXTENSION LOADED")
+          refute_includes(result.out, "FOO EXTENSION LOADED", result.to_s)
+
+          assert_empty_stderr(result)
           assert_success_status(result)
         end
       end

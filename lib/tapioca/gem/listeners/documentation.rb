@@ -15,7 +15,7 @@ module Tapioca
           "shareable_constant_value:",
           "rubocop:",
           "@requires_ancestor:",
-        ] #: Array[String]
+        ].freeze #: Array[String]
 
         #: (Pipeline pipeline, Rubydex::Graph gem_graph) -> void
         def initialize(pipeline, gem_graph)
@@ -69,18 +69,23 @@ module Tapioca
           end
           return [] unless declaration
 
-          comments = declaration.definitions.flat_map(&:comments)
-          comments.uniq!
-          return [] if comments.empty?
-
-          lines = comments
-            .map { |comment| comment.string.gsub(/^#+ ?/, "") }
-            .reject { |line| IGNORED_COMMENTS.any? { |comment| line.include?(comment) } || rbs_comment?(line) } # rubocop:disable Style/ArrayIntersect
+          # Definitions often share a comment block, such as a license header, so de-duplicate them
+          lines = declaration.definitions
+            .map { |definition| comment_lines(definition) }
+            .uniq
+            .flatten
 
           # Strip leading and trailing blank lines, matching YARD's behavior
           lines = lines.reverse_each.drop_while(&:empty?).reverse_each.drop_while(&:empty?)
 
           lines.map! { |line| RBI::Comment.new(line) }
+        end
+
+        #: (Rubydex::Definition definition) -> Array[String]
+        def comment_lines(definition)
+          lines = definition.comments.map { |comment| comment.string.gsub(/^#+ ?/, "") }
+          lines.reject! { |line| IGNORED_COMMENTS.any? { |comment| line.include?(comment) } || rbs_comment?(line) }
+          lines
         end
 
         # @override
