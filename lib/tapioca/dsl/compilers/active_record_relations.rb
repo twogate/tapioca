@@ -1003,12 +1003,23 @@ module Tapioca
 
         #: -> void
         def create_where_relation_method
-          parameters = constant.column_names.map do |column_name|
-            create_kw_opt_param(column_name, type: 'T.any(String, Integer, Symbol, T::Boolean, NilClass, T::Array[T.any(String, Integer, Symbol)], ActiveRecord::AssociationRelation, ActiveRecord::Relation, T::Range[T.untyped]), ActiveSupport::TimeWithZone', default: 'nil')
+          column_type = "T.any(String, Integer, Symbol, T::Boolean, NilClass, " \
+            "T::Array[T.any(String, Integer, Symbol)], ActiveRecord::AssociationRelation, " \
+            "ActiveRecord::Relation, T::Range[T.untyped], ActiveSupport::TimeWithZone)"
+          association_type = "T.any(NilClass, ActiveRecord::Base, ActiveRecord::AssociationRelation, " \
+            "ActiveRecord::Relation, T::Array[ActiveRecord::Base], T::Hash[T.any(String, Symbol), T.untyped])"
+          nested_type = "T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, " \
+            "T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))"
+
+          column_names = constant.table_exists? ? constant.column_names : []
+          parameters = [
+            create_opt_param("string_query", type: "String", default: "nil"),
+          ] + column_names.map do |column_name|
+            create_kw_opt_param(column_name, type: column_type, default: "nil")
           end + constant.reflect_on_all_associations(:belongs_to).map(&:name).map do |association_name|
-            create_kw_opt_param(association_name, type: 'T.any(NilClass, ActiveRecord::Base, ActiveRecord::AssociationRelation, ActiveRecord::Relation, T::Array[ActiveRecord::Base], T::Hash[T.any(String, Symbol), T.untyped])', default: 'nil')
+            create_kw_opt_param(association_name, type: association_type, default: "nil")
           end + [
-            create_kw_rest_param('nested', type: 'T.nilable(T::Hash[T.untyped, T.untyped])'),
+            create_kw_rest_param("nested", type: nested_type),
           ]
 
           relation_methods_module.create_method("where") do |method|
@@ -1036,20 +1047,20 @@ module Tapioca
           end
 
           # where_sql
-          if constant.respond_to?('where_sql')
+          if constant.respond_to?("where_sql")
             relation_methods_module.create_method(
-              'where_sql',
+              "where_sql",
               parameters: [
-                create_param('string_query', type: 'String'),
+                create_param("string_query", type: "String"),
                 create_rest_param("rest", type: "T.untyped"),
               ],
               return_type: RelationClassName,
             )
 
             association_relation_methods_module.create_method(
-              'where_sql',
+              "where_sql",
               parameters: [
-                create_param('string_query', type: 'String'),
+                create_param("string_query", type: "String"),
                 create_rest_param("rest", type: "T.untyped"),
               ],
               return_type: AssociationRelationClassName,

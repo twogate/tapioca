@@ -47,6 +47,34 @@ module Tapioca
               )
             end
 
+            it "supports SQL conditions and scalar query parameters in where signatures" do
+              add_ruby_file("schema.rb", <<~RUBY)
+                ActiveRecord::Migration.suppress_messages do
+                  ActiveRecord::Schema.define do
+                    create_table :posts do |t|
+                      t.datetime :published_at
+                    end
+                  end
+                end
+              RUBY
+
+              add_ruby_file("post.rb", <<~RUBY)
+                class Post < ActiveRecord::Base
+                end
+              RUBY
+
+              rbi = rbi_for(:Post)
+
+              assert_equal(2, rbi.scan("def where(string_query = nil, id: nil, published_at: nil, **nested); end").length)
+              assert_includes(rbi, "string_query: String")
+              assert_includes(rbi, "T::Range[T.untyped], ActiveSupport::TimeWithZone)")
+              assert_includes(
+                rbi,
+                "nested: T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, " \
+                  "T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))",
+              )
+            end
+
             it "generates proper relation classes and modules" do
               add_ruby_file("schema.rb", <<~RUBY)
                 ActiveRecord::Migration.suppress_messages do
@@ -460,8 +488,8 @@ module Tapioca
                     def unscoped(&block); end
 
                     sig { returns(PrivateAssociationRelationWhereChain) }
-                    sig { params(args: T.untyped).returns(PrivateAssociationRelation) }
-                    def where(*args); end
+                    sig { params(string_query: String, id: T.any(String, Integer, Symbol, T::Boolean, NilClass, T::Array[T.any(String, Integer, Symbol)], ActiveRecord::AssociationRelation, ActiveRecord::Relation, T::Range[T.untyped], ActiveSupport::TimeWithZone), nested: T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))).returns(PrivateAssociationRelation) }
+                    def where(string_query = nil, id: nil, **nested); end
 
                     sig { params(args: T.untyped, blk: T.untyped).returns(PrivateAssociationRelation) }
                     def with(*args, &blk); end
@@ -609,8 +637,8 @@ module Tapioca
                     def unscoped(&block); end
 
                     sig { returns(PrivateRelationWhereChain) }
-                    sig { params(args: T.untyped).returns(PrivateRelation) }
-                    def where(*args); end
+                    sig { params(string_query: String, id: T.any(String, Integer, Symbol, T::Boolean, NilClass, T::Array[T.any(String, Integer, Symbol)], ActiveRecord::AssociationRelation, ActiveRecord::Relation, T::Range[T.untyped], ActiveSupport::TimeWithZone), nested: T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))).returns(PrivateRelation) }
+                    def where(string_query = nil, id: nil, **nested); end
 
                     sig { params(args: T.untyped, blk: T.untyped).returns(PrivateRelation) }
                     def with(*args, &blk); end
@@ -1215,8 +1243,8 @@ module Tapioca
                     def unscoped(&block); end
 
                     sig { returns(PrivateAssociationRelationWhereChain) }
-                    sig { params(args: T.untyped).returns(PrivateAssociationRelation) }
-                    def where(*args); end
+                    sig { params(string_query: String, nested: T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))).returns(PrivateAssociationRelation) }
+                    def where(string_query = nil, **nested); end
 
                     sig { params(args: T.untyped, blk: T.untyped).returns(PrivateAssociationRelation) }
                     def with(*args, &blk); end
@@ -1364,8 +1392,8 @@ module Tapioca
                     def unscoped(&block); end
 
                     sig { returns(PrivateRelationWhereChain) }
-                    sig { params(args: T.untyped).returns(PrivateRelation) }
-                    def where(*args); end
+                    sig { params(string_query: String, nested: T.nilable(T.any(Integer, String, Symbol, Date, ActiveSupport::TimeWithZone, T::Array[T.any(Integer, String, Symbol)], T::Hash[T.untyped, T.untyped]))).returns(PrivateRelation) }
+                    def where(string_query = nil, **nested); end
 
                     sig { params(args: T.untyped, blk: T.untyped).returns(PrivateRelation) }
                     def with(*args, &blk); end
